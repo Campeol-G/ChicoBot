@@ -11,7 +11,8 @@ public final class Config {
   public Config(Map<String, String> env) {
     this.env = Map.copyOf(env);
     if (tokenValue().isBlank()) {
-      throw new IllegalArgumentException("DISCORD_TOKEN is required");
+      throw new IllegalArgumentException(
+          "DISCORD_TOKEN is not set. Load it from ~/.config/chicos-bot/env (see README)");
     }
     devGuildId();
   }

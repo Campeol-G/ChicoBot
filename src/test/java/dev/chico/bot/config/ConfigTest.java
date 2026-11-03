@@ -63,4 +63,14 @@ class ConfigTest {
 
     assertTrue(ex.getMessage() != null && !ex.getMessage().isBlank());
   }
+
+  @Test
+  void missingTokenMessagePointsToEnvFile() {
+    IllegalArgumentException ex = assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of()));
+
+    assertTrue(ex.getMessage().contains("~/.config/chicos-bot/env"),
+        "message should tell where the token comes from, got: " + ex.getMessage());
+  }
 }
