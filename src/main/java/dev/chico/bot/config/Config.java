@@ -21,6 +21,11 @@ public final class Config {
     return tokenValue();
   }
 
+  public Optional<String> ytRefreshToken() {
+    String raw = env.getOrDefault("YT_REFRESH_TOKEN", "").strip();
+    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+  }
+
   public Optional<Long> devGuildId() {
     String raw = env.getOrDefault("DEV_GUILD_ID", "").strip();
     if (raw.isEmpty()) {

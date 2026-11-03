@@ -29,6 +29,25 @@ java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true -jar target/chi
 Do not restart in a loop: Discord allows 1000 IDENTIFY per 24 h and resets the
 token when that is exceeded.
 
+## YouTube login-wall (OAuth, optional)
+
+Without authentication YouTube refuses streaming from datacenter-like IPs
+("This video requires login"). Search still works; playback fails. To unlock
+it with a burner Google account (never your main):
+
+```bash
+# 1. prints a google.com/device link and a code
+java -cp target/chicos-bot.jar dev.chico.bot.source.YoutubeOauthSetup
+# 2. open the link with the burner account, enter the code, wait
+# 3. the refresh token is printed; store it (mode 600, never commit/share):
+printf 'YT_REFRESH_TOKEN=%s\n' 'paste-token-here' >> ~/.config/chicos-bot/env
+# 4. restart
+./run.sh
+```
+
+With a token set, the `Tv` client handles authenticated playback. Without it
+the bot stays on unauthenticated access (best-effort).
+
 ## Test
 
 ```bash

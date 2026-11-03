@@ -10,7 +10,13 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.chico.bot.audio.GuildMusicManager;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
+import dev.lavalink.youtube.clients.AndroidVr;
+import dev.lavalink.youtube.clients.Music;
+import dev.lavalink.youtube.clients.Tv;
+import dev.lavalink.youtube.clients.Web;
+import dev.lavalink.youtube.clients.WebEmbedded;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +33,27 @@ public final class PlaybackService {
   private final Map<Long, GuildMusicManager> managers = new ConcurrentHashMap<>();
   private final VoiceConnector connector;
 
-  public PlaybackService(VoiceConnector connector) {
+  public PlaybackService(VoiceConnector connector, Optional<String> youtubeRefreshToken) {
     this.connector = connector;
-    playerManager.registerSourceManager(new YoutubeAudioSourceManager());
+    playerManager.registerSourceManager(createYoutubeSource(youtubeRefreshToken));
     playerManager.registerSourceManager(SoundCloudAudioSourceManager.createDefault());
+  }
+
+  private static YoutubeAudioSourceManager createYoutubeSource(Optional<String> refreshToken) {
+    boolean authenticated = refreshToken.filter(token -> !token.isBlank()).isPresent();
+    // Tv is the only OAuth-capable client; other clients keep metadata and search working.
+    YoutubeAudioSourceManager youtube =
+        authenticated
+            ? new YoutubeAudioSourceManager(
+                new Music(), new AndroidVr(), new Web(), new WebEmbedded(), new Tv())
+            : new YoutubeAudioSourceManager();
+    if (authenticated) {
+      youtube.useOauth2(refreshToken.orElseThrow(), true);
+      log.info("YouTube OAuth enabled");
+    } else {
+      log.info("YouTube OAuth disabled, unauthenticated access");
+    }
+    return youtube;
   }
 
   public AudioPlayerSendHandler sendHandler(long guildId) {

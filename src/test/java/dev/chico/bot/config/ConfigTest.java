@@ -73,4 +73,30 @@ class ConfigTest {
     assertTrue(ex.getMessage().contains("~/.config/chicos-bot/env"),
         "message should tell where the token comes from, got: " + ex.getMessage());
   }
+
+  @Test
+  void ytRefreshTokenEmptyByDefault() {
+    Config config = new Config(envWithToken());
+
+    assertTrue(config.ytRefreshToken().isEmpty());
+  }
+
+  @Test
+  void ytRefreshTokenFromEnv() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "YT_REFRESH_TOKEN", "refresh-token-placeholder"));
+
+    assertTrue(config.ytRefreshToken().isPresent());
+    assertEquals("refresh-token-placeholder", config.ytRefreshToken().orElseThrow());
+  }
+
+  @Test
+  void blankYtRefreshTokenTreatedAsEmpty() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "YT_REFRESH_TOKEN", "   "));
+
+    assertTrue(config.ytRefreshToken().isEmpty());
+  }
 }
