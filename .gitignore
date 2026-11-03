@@ -1,0 +1,19 @@
+# Build output
+target/
+
+# Local secrets and config. The bot token lives outside the repo.
+.env
+.env.*
+!.env.example
+
+# Personal test material: screenshots, URLs and search lists. Never commit.
+references/
+
+# Logs and IDE files
+*.log
+logs/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+dependency-reduced-pom.xml
