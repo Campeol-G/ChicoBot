@@ -48,6 +48,30 @@ printf 'YT_REFRESH_TOKEN=%s\n' 'paste-token-here' >> ~/.config/chicos-bot/env
 With a token set, the `Tv` client handles authenticated playback. Without it
 the bot stays on unauthenticated access (best-effort).
 
+## Remote cipher (required for YouTube playback)
+
+`youtube-source` 1.18.2 cannot decipher current player scripts locally
+(upstream issue #241; the maintainer's answer is a remote cipher server).
+Without it, playback fails even with OAuth. Configure:
+
+```bash
+YT_CIPHER_URL=http://localhost:8001
+YT_CIPHER_PASSWORD=choose-a-password
+```
+
+Options, in order of preference:
+
+1. **Self-hosted** (data stays local): `git clone https://github.com/kikkia/yt-cipher`,
+   `cd yt-cipher && docker compose up` (set `API_TOKEN` and
+   `OVERRIDE_SCRIPT_VARIANT=IAS`), then point `YT_CIPHER_URL` at it.
+   Update with `./scripts/update-compose.sh`.
+2. **Public instance** (`https://cipher.kikkia.dev/`, no password, 10 req/s):
+   fine for testing, not for daily use.
+
+Recheck each `youtube-source` release: clear `YT_CIPHER_URL`, restart, and play
+a login-walled video. If it plays, the local cipher works again — drop the
+remote cipher and bump the pinned version.
+
 ## Test
 
 ```bash

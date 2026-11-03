@@ -9,8 +9,10 @@ import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.chico.bot.audio.GuildMusicManager;
+import dev.chico.bot.config.Config;
 import dev.chico.bot.source.PatchedTvClient;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
+import dev.lavalink.youtube.YoutubeSourceOptions;
 import dev.lavalink.youtube.clients.AndroidVr;
 import dev.lavalink.youtube.clients.Music;
 import dev.lavalink.youtube.clients.Web;
@@ -33,20 +35,30 @@ public final class PlaybackService {
   private final Map<Long, GuildMusicManager> managers = new ConcurrentHashMap<>();
   private final VoiceConnector connector;
 
-  public PlaybackService(VoiceConnector connector, Optional<String> youtubeRefreshToken) {
+  public PlaybackService(VoiceConnector connector, Config config) {
     this.connector = connector;
-    playerManager.registerSourceManager(createYoutubeSource(youtubeRefreshToken));
+    playerManager.registerSourceManager(createYoutubeSource(config));
     playerManager.registerSourceManager(SoundCloudAudioSourceManager.createDefault());
   }
 
-  private static YoutubeAudioSourceManager createYoutubeSource(Optional<String> refreshToken) {
-    boolean authenticated = refreshToken.filter(token -> !token.isBlank()).isPresent();
+  private static YoutubeAudioSourceManager createYoutubeSource(Config config) {
+    YoutubeSourceOptions options = new YoutubeSourceOptions();
+    // NOTA: remote cipher until a youtube-source release fixes the local
+    // signature cipher for current player scripts (upstream issue #241).
+    // Recheck by clearing YT_CIPHER_URL: if login-walled videos play, drop this.
+    config.ytCipherUrl().ifPresent(url ->
+        options.setRemoteCipher(url, config.ytCipherPassword(), "chicos-bot"));
+    Optional<String> refreshToken =
+        config.ytRefreshToken().filter(token -> !token.isBlank());
+    boolean authenticated = refreshToken.isPresent();
     // Tv is the only OAuth-capable client; other clients keep metadata and search working.
     YoutubeAudioSourceManager youtube =
         authenticated
             ? new YoutubeAudioSourceManager(
+                options,
                 new Music(), new AndroidVr(), new Web(), new WebEmbedded(), new PatchedTvClient())
-            : new YoutubeAudioSourceManager();
+            : new YoutubeAudioSourceManager(
+                options, YoutubeAudioSourceManager.DEFAULT_CLIENTS);
     if (authenticated) {
       youtube.useOauth2(refreshToken.orElseThrow(), true);
       log.info("YouTube OAuth enabled");

@@ -34,7 +34,7 @@ public final class Bot {
     AtomicReference<PlaybackService> playbackRef = new AtomicReference<>();
     JdaVoiceConnector connector =
         new JdaVoiceConnector(jda, guildId -> playbackRef.get().sendHandler(guildId));
-    playbackRef.set(new PlaybackService(connector, config.ytRefreshToken()));
+    playbackRef.set(new PlaybackService(connector, config));
     MusicCommands commands = new MusicCommands(playbackRef.get());
     jda.addEventListener(commands);
     registerPlay(jda);

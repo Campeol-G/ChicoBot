@@ -99,4 +99,32 @@ class ConfigTest {
 
     assertTrue(config.ytRefreshToken().isEmpty());
   }
+
+  @Test
+  void ytCipherDisabledByDefault() {
+    Config config = new Config(envWithToken());
+
+    assertTrue(config.ytCipherUrl().isEmpty());
+    assertEquals("", config.ytCipherPassword());
+  }
+
+  @Test
+  void ytCipherFromEnv() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "YT_CIPHER_URL", "http://localhost:8001",
+        "YT_CIPHER_PASSWORD", "cipher-password-placeholder"));
+
+    assertEquals("http://localhost:8001", config.ytCipherUrl().orElseThrow());
+    assertEquals("cipher-password-placeholder", config.ytCipherPassword());
+  }
+
+  @Test
+  void blankYtCipherUrlTreatedAsEmpty() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "YT_CIPHER_URL", "   "));
+
+    assertTrue(config.ytCipherUrl().isEmpty());
+  }
 }

@@ -26,6 +26,15 @@ public final class Config {
     return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
   }
 
+  public Optional<String> ytCipherUrl() {
+    String raw = env.getOrDefault("YT_CIPHER_URL", "").strip();
+    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+  }
+
+  public String ytCipherPassword() {
+    return env.getOrDefault("YT_CIPHER_PASSWORD", "");
+  }
+
   public Optional<Long> devGuildId() {
     String raw = env.getOrDefault("DEV_GUILD_ID", "").strip();
     if (raw.isEmpty()) {
