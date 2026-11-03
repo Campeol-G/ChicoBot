@@ -61,10 +61,11 @@ YT_CIPHER_PASSWORD=choose-a-password
 
 Options, in order of preference:
 
-1. **Self-hosted** (data stays local): `git clone https://github.com/kikkia/yt-cipher`,
-   `cd yt-cipher && docker compose up` (set `API_TOKEN` and
-   `OVERRIDE_SCRIPT_VARIANT=IAS`), then point `YT_CIPHER_URL` at it.
-   Update with `./scripts/update-compose.sh`.
+1. **Self-hosted** (already set up in `../yt-cipher`, data stays local):
+   `run.sh` starts it automatically when `YT_CIPHER_URL` points at localhost.
+   Manage it with `docker compose` in that dir; update with
+   `./scripts/update-compose.sh`. Docker is enabled at boot and the container
+   uses `restart: unless-stopped`.
 2. **Public instance** (`https://cipher.kikkia.dev/`, no password, 10 req/s):
    fine for testing, not for daily use.
 
