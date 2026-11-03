@@ -9,10 +9,10 @@ import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.chico.bot.audio.GuildMusicManager;
+import dev.chico.bot.source.PatchedTvClient;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import dev.lavalink.youtube.clients.AndroidVr;
 import dev.lavalink.youtube.clients.Music;
-import dev.lavalink.youtube.clients.Tv;
 import dev.lavalink.youtube.clients.Web;
 import dev.lavalink.youtube.clients.WebEmbedded;
 import java.util.Map;
@@ -45,7 +45,7 @@ public final class PlaybackService {
     YoutubeAudioSourceManager youtube =
         authenticated
             ? new YoutubeAudioSourceManager(
-                new Music(), new AndroidVr(), new Web(), new WebEmbedded(), new Tv())
+                new Music(), new AndroidVr(), new Web(), new WebEmbedded(), new PatchedTvClient())
             : new YoutubeAudioSourceManager();
     if (authenticated) {
       youtube.useOauth2(refreshToken.orElseThrow(), true);
