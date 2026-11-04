@@ -31,6 +31,8 @@ public final class TsvParser {
       return;
     }
     try {
+      int block = Integer.parseInt(columns[2].strip());
+      int paragraph = Integer.parseInt(columns[3].strip());
       int lineNumber = Integer.parseInt(columns[4].strip());
       int left = Integer.parseInt(columns[6].strip());
       int top = Integer.parseInt(columns[7].strip());
@@ -40,7 +42,7 @@ public final class TsvParser {
       if (confidence < 0) {
         return;
       }
-      words.add(new OcrWord(text, left, top, width, height, confidence, lineNumber));
+      words.add(new OcrWord(text, left, top, width, height, confidence, block, paragraph, lineNumber));
     } catch (NumberFormatException notANumber) {
       // Skip malformed rows: OCR output must never crash the import.
     }
