@@ -2,6 +2,8 @@ package dev.chico.bot.audio;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
+import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
+import java.util.List;
 
 /** Holds the player, scheduler and send handler of one guild. */
 public final class GuildMusicManager {
@@ -10,9 +12,9 @@ public final class GuildMusicManager {
   private final TrackScheduler scheduler;
   private final AudioPlayerSendHandler sendHandler;
 
-  public GuildMusicManager(AudioPlayerManager manager) {
+  public GuildMusicManager(AudioPlayerManager manager, int queueMax) {
     this.player = manager.createPlayer();
-    this.scheduler = new TrackScheduler(player);
+    this.scheduler = new TrackScheduler(player, queueMax);
     this.player.addListener(scheduler);
     this.sendHandler = new AudioPlayerSendHandler(player);
   }
@@ -27,5 +29,22 @@ public final class GuildMusicManager {
 
   public AudioPlayerSendHandler sendHandler() {
     return sendHandler;
+  }
+
+  /**
+   * Adds the batch in order until the queue is full. The guild lock keeps
+   * concurrent batches from interleaving.
+   *
+   * @return how many tracks were accepted
+   */
+  public synchronized int enqueueAll(List<AudioTrack> tracks) {
+    int accepted = 0;
+    for (AudioTrack track : tracks) {
+      if (!scheduler.queue(track)) {
+        break;
+      }
+      accepted++;
+    }
+    return accepted;
   }
 }

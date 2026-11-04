@@ -51,9 +51,11 @@ public final class PlaybackService {
   private final VoiceConnector connector;
   private final TrackResolver resolver;
   private final MetadataLookup metadata;
+  private final int queueMax;
 
   public PlaybackService(VoiceConnector connector, Config config) {
     this.connector = connector;
+    this.queueMax = config.queueMax();
     Duration resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
     YoutubeAudioSourceManager youtube = createYoutubeSource(config);
     playerManager.registerSourceManager(youtube);
@@ -175,6 +177,6 @@ public final class PlaybackService {
   }
 
   private GuildMusicManager musicManager(long guildId) {
-    return managers.computeIfAbsent(guildId, id -> new GuildMusicManager(playerManager));
+    return managers.computeIfAbsent(guildId, id -> new GuildMusicManager(playerManager, queueMax));
   }
 }
