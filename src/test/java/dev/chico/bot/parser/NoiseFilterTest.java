@@ -42,6 +42,16 @@ class NoiseFilterTest {
     assertTrue(NoiseFilter.isNoise("há 2 dias"));
     assertTrue(NoiseFilter.isNoise("há 3 semanas"));
     assertTrue(NoiseFilter.isNoise("22 de set. de 2026"));
+    assertTrue(NoiseFilter.isNoise("Dec 16, 2025"));
+  }
+
+  @Test
+  void interfaceWordsInsideLineMarkHeaders() {
+    assertTrue(NoiseFilter.containsInterfaceWord("t* título"));
+    assertTrue(NoiseFilter.containsInterfaceWord("# Título ®"));
+    assertTrue(NoiseFilter.containsInterfaceWord("Title Album Date added"));
+    assertFalse(NoiseFilter.containsInterfaceWord("Feather"));
+    assertFalse(NoiseFilter.containsInterfaceWord("Nujabes, Cise Starr"));
   }
 
   @Test

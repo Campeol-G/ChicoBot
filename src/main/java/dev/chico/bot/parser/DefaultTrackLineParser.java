@@ -45,7 +45,10 @@ public final class DefaultTrackLineParser implements TrackLineParser {
           continue;
         }
         String text = join(kept);
-        if (NoiseFilter.isNoise(text) || averageConfidence(kept) < MIN_CONFIDENCE) {
+        String normalized = TextNormalizer.normalize(text);
+        if (NoiseFilter.isNoise(text)
+            || NoiseFilter.containsInterfaceWord(normalized)
+            || averageConfidence(kept) < MIN_CONFIDENCE) {
           continue;
         }
         content.add(new ContentLine(kept, text));
@@ -205,11 +208,39 @@ public final class DefaultTrackLineParser implements TrackLineParser {
               key -> new ArrayList<>())
           .add(word);
     }
-    return new ArrayList<>(
-        grouped.values().stream()
-            .map(Line::of)
-            .sorted(Comparator.comparingInt(Line::top).thenComparingInt(Line::left))
-            .toList());
+    List<Line> lines = new ArrayList<>();
+    for (List<OcrWord> group : grouped.values()) {
+      lines.addAll(splitVisualLines(group));
+    }
+    lines.sort(Comparator.comparingInt(Line::top).thenComparingInt(Line::left));
+    return lines;
+  }
+
+  /**
+   * Splits one TSV line group into visual lines. Tesseract sometimes reuses a
+   * line number for text rows far apart; words on one visual row overlap.
+   */
+  private static List<Line> splitVisualLines(List<OcrWord> group) {
+    List<OcrWord> sorted = new ArrayList<>(group);
+    sorted.sort(Comparator.comparingInt(OcrWord::top));
+    double medianHeight =
+        median(sorted.stream().mapToDouble(OcrWord::height).sorted().toArray());
+    double gapLimit = Math.max(3.0, medianHeight * 0.8);
+    List<Line> lines = new ArrayList<>();
+    List<OcrWord> current = new ArrayList<>();
+    int bottom = Integer.MIN_VALUE;
+    for (OcrWord word : sorted) {
+      if (!current.isEmpty() && word.top() - bottom > gapLimit) {
+        lines.add(Line.of(current));
+        current = new ArrayList<>();
+      }
+      current.add(word);
+      bottom = Math.max(bottom, word.top() + word.height());
+    }
+    if (!current.isEmpty()) {
+      lines.add(Line.of(current));
+    }
+    return lines;
   }
 
   private static List<List<ContentLine>> groupRows(List<ContentLine> lines) {

@@ -35,8 +35,26 @@ public final class NoiseFilter {
       Pattern.compile("(?i)^h[áa]\\s+\\d+\\s+\\w+.*");
   private static final Pattern FULL_DATE =
       Pattern.compile("^\\d{1,2} de \\S+ de \\d{4}$");
+  private static final Pattern FULL_DATE_EN =
+      Pattern.compile("^[a-z]{3} \\d{1,2}, \\d{4}$");
 
   private NoiseFilter() {
+  }
+
+  /**
+   * True when any whole word is interface text (headers like "# Título ®"
+   * or "Title Album Date added"), even surrounded by OCR garbage tokens.
+   */
+  public static boolean containsInterfaceWord(String normalizedText) {
+    if (normalizedText == null) {
+      return false;
+    }
+    for (String token : normalizedText.toLowerCase(Locale.ROOT).split("\\s+")) {
+      if (INTERFACE_WORDS.contains(token)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public static boolean isNoise(String input) {
@@ -56,6 +74,7 @@ public final class NoiseFilter {
         || PLAY_COUNT.matcher(text).matches()
         || SHORT_COUNT.matcher(text).matches()
         || RELATIVE_DATE.matcher(text).matches()
-        || FULL_DATE.matcher(text).matches();
+        || FULL_DATE.matcher(text).matches()
+        || FULL_DATE_EN.matcher(text).matches();
   }
 }
