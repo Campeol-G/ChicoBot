@@ -2,7 +2,7 @@ package dev.chico.bot.audio;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
-import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
+import dev.chico.bot.source.TrackCandidate;
 import java.util.List;
 
 /** Holds the player, scheduler and send handler of one guild. */
@@ -37,10 +37,10 @@ public final class GuildMusicManager {
    *
    * @return how many tracks were accepted
    */
-  public synchronized int enqueueAll(List<AudioTrack> tracks) {
+  public synchronized int enqueueAll(List<TrackCandidate> candidates) {
     int accepted = 0;
-    for (AudioTrack track : tracks) {
-      if (!scheduler.queue(track)) {
+    for (TrackCandidate candidate : candidates) {
+      if (!scheduler.queue(candidate)) {
         break;
       }
       accepted++;

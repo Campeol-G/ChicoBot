@@ -3,29 +3,31 @@ package dev.chico.bot.application;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager;
-import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
+import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.chico.bot.audio.GuildMusicManager;
 import dev.chico.bot.config.Config;
+import dev.chico.bot.security.RateLimiter;
+import dev.chico.bot.source.CircuitBreaker;
 import dev.chico.bot.source.DefaultTrackResolver;
 import dev.chico.bot.source.LavaplayerTrackLoader;
 import dev.chico.bot.source.MetadataLookup;
+import dev.chico.bot.source.PatchedTvClient;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Ranker;
 import dev.chico.bot.source.Source;
+import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackLoader;
 import dev.chico.bot.source.TrackResolver;
 import dev.chico.bot.source.TrackUrlPolicy;
 import dev.chico.bot.source.UrlDecision;
 import dev.chico.bot.source.UrlQuery;
-import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import dev.lavalink.youtube.YoutubeSourceOptions;
 import dev.lavalink.youtube.clients.AndroidVr;
 import dev.lavalink.youtube.clients.Music;
 import dev.lavalink.youtube.clients.Web;
 import dev.lavalink.youtube.clients.WebEmbedded;
-import dev.chico.bot.source.PatchedTvClient;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -38,7 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Resolves any input to playable candidates and enqueues the best one. */
+/** Resolves any input to playable candidates and controls per-guild playback. */
 public final class PlaybackService {
 
   private static final int MAX_SEARCH_RESULTS = 5;
@@ -46,16 +48,33 @@ public final class PlaybackService {
 
   private static final Logger log = LoggerFactory.getLogger(PlaybackService.class);
 
+  /** Outcome of a play request: the queued track or a message for the user. */
+  public record PlayResult(boolean queued, String message, TrackCandidate candidate) {
+  }
+
+  /** Current track plus the waiting queue, both without audio handles. */
+  public record QueueView(Optional<TrackCandidate> current, List<TrackCandidate> queued) {
+  }
+
   private final AudioPlayerManager playerManager = new DefaultAudioPlayerManager();
   private final Map<Long, GuildMusicManager> managers = new ConcurrentHashMap<>();
   private final VoiceConnector connector;
   private final TrackResolver resolver;
   private final MetadataLookup metadata;
+  private final RateLimiter rateLimiter = new RateLimiter();
+  private final Clock clock;
   private final int queueMax;
+  private final int playCooldownS;
 
   public PlaybackService(VoiceConnector connector, Config config) {
+    this(connector, config, Clock.systemUTC());
+  }
+
+  PlaybackService(VoiceConnector connector, Config config, Clock clock) {
     this.connector = connector;
+    this.clock = clock;
     this.queueMax = config.queueMax();
+    this.playCooldownS = config.playCooldownS();
     Duration resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
     YoutubeAudioSourceManager youtube = createYoutubeSource(config);
     playerManager.registerSourceManager(youtube);
@@ -72,10 +91,10 @@ public final class PlaybackService {
         new DefaultTrackResolver(
             loaders,
             new Ranker(config.matchThreshold()),
-            new dev.chico.bot.source.CircuitBreaker(
+            new CircuitBreaker(
                 config.sourceFailureThreshold(),
                 Duration.ofSeconds(config.sourceDegradedCooldownS()),
-                Clock.systemUTC()),
+                clock),
             resolveTimeout);
     this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
   }
@@ -85,13 +104,18 @@ public final class PlaybackService {
   }
 
   /** Resolves the input, enqueues the best candidate and reports what happened. */
-  public CompletableFuture<String> play(long guildId, long voiceChannelId, String input) {
+  public CompletableFuture<PlayResult> play(
+      long guildId, long voiceChannelId, long userId, String input) {
+    if (!rateLimiter.tryAcquire(userId, playCooldownS, clock)) {
+      return CompletableFuture.completedFuture(
+          refused("Slow down. Try again in a few seconds."));
+    }
     UrlDecision decision = TrackUrlPolicy.classify(input);
     if (decision instanceof UrlDecision.Rejected rejected) {
       if (rejected.reason() == UrlDecision.Reason.INVALID) {
-        return playQuery(guildId, voiceChannelId, new dev.chico.bot.source.TextQuery(input));
+        return playQuery(guildId, voiceChannelId, new TextQuery(input));
       }
-      return CompletableFuture.completedFuture(refusalMessage(rejected.reason()));
+      return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason())));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
@@ -103,37 +127,162 @@ public final class PlaybackService {
         .thenCompose(
             text ->
                 text.map(
-                        found ->
-                            playQuery(
-                                guildId,
-                                voiceChannelId,
-                                new dev.chico.bot.source.TextQuery(found)))
+                        found -> playQuery(guildId, voiceChannelId, new TextQuery(found)))
                     .orElseGet(
                         () ->
                             CompletableFuture.completedFuture(
-                                "Could not read that link. Send the track name instead.")));
+                                refused("Could not read that link. Send the track name instead."))));
   }
 
-  private CompletableFuture<String> playQuery(
+  public String pause(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null || music.player().getPlayingTrack() == null) {
+      return "Nothing is playing.";
+    }
+    music.player().setPaused(true);
+    return "Paused.";
+  }
+
+  public String resume(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null || music.player().getPlayingTrack() == null) {
+      return "Nothing to resume.";
+    }
+    music.player().setPaused(false);
+    return "Resumed.";
+  }
+
+  public String stop(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null || music.player().getPlayingTrack() == null) {
+      return "Nothing is playing.";
+    }
+    music.player().stopTrack();
+    music.scheduler().queueView().clear();
+    return "Stopped and cleared the queue.";
+  }
+
+  public String skip(long guildId, Optional<String> target) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null || music.scheduler().current().isEmpty()) {
+      return "Nothing to skip.";
+    }
+    if (target.isEmpty() || target.orElseThrow().isBlank()) {
+      music.scheduler().nextTrack();
+      return "Skipped.";
+    }
+    Optional<Integer> index = findQueued(music, target.orElseThrow());
+    if (index.isEmpty()) {
+      return "No queued track matches that.";
+    }
+    for (int i = 1; i < index.orElseThrow(); i++) {
+      music.scheduler().queueView().poll();
+    }
+    music.scheduler().nextTrack();
+    return "Skipped.";
+  }
+
+  public String remove(long guildId, String target) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null) {
+      return "The queue is empty.";
+    }
+    Optional<Integer> index = findQueued(music, target);
+    if (index.isEmpty()) {
+      return "No queued track matches that.";
+    }
+    List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
+    TrackCandidate removed = queued.get(index.orElseThrow() - 1);
+    music.scheduler().queueView().removeAt(index.orElseThrow() - 1);
+    return "Removed " + removed.title() + ".";
+  }
+
+  public QueueView queueView(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null) {
+      return new QueueView(Optional.empty(), List.of());
+    }
+    return new QueueView(
+        music.scheduler().current(), music.scheduler().queueView().snapshot());
+  }
+
+  public boolean isIdle(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    return music == null
+        || (music.player().getPlayingTrack() == null
+            && music.scheduler().queueView().size() == 0);
+  }
+
+  public String leave(long guildId) {
+    GuildMusicManager music = managers.remove(guildId);
+    if (music != null) {
+      music.player().stopTrack();
+      music.scheduler().queueView().clear();
+    }
+    connector.disconnect(guildId);
+    return "Left the voice channel.";
+  }
+
+  private Optional<Integer> findQueued(GuildMusicManager music, String target) {
+    String trimmed = target.strip();
+    List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
+    try {
+      int number = Integer.parseInt(trimmed);
+      if (number >= 1 && number <= queued.size()) {
+        return Optional.of(number);
+      }
+      return Optional.empty();
+    } catch (NumberFormatException notANumber) {
+      String lowered = trimmed.toLowerCase();
+      for (int i = 0; i < queued.size(); i++) {
+        TrackCandidate candidate = queued.get(i);
+        String haystack = (candidate.title() + " " + candidate.artist()).toLowerCase();
+        if (haystack.contains(lowered)) {
+          return Optional.of(i + 1);
+        }
+      }
+      return Optional.empty();
+    }
+  }
+
+  private CompletableFuture<PlayResult> playQuery(
       long guildId, long voiceChannelId, PlayQuery query) {
     return resolver
         .resolve(query)
         .thenApply(
             candidates -> {
               if (candidates.isEmpty()) {
-                return "Nothing found. Try another name or link.";
+                return refused("Nothing found. Try another name or link.");
               }
               TrackCandidate best = candidates.get(0);
               connector.connect(guildId, voiceChannelId);
-              AudioTrack track = best.track().makeClone();
-              musicManager(guildId).scheduler().queue(track);
-              return "Queued " + best.title() + " - " + best.artist() + ".";
+              TrackCandidate clone = cloneOf(best);
+              int accepted = musicManager(guildId).enqueueAll(List.of(clone));
+              if (accepted == 0) {
+                return refused("The queue is full.");
+              }
+              return new PlayResult(true, "", best);
             })
         .exceptionally(
             failure -> {
               log.warn("Playback failed", failure);
-              return "Search failed. Try again later.";
+              return refused("Search failed. Try again later.");
             });
+  }
+
+  private static TrackCandidate cloneOf(TrackCandidate candidate) {
+    return new TrackCandidate(
+        candidate.source(),
+        candidate.title(),
+        candidate.artist(),
+        candidate.duration(),
+        candidate.uri(),
+        candidate.score(),
+        candidate.track().makeClone());
+  }
+
+  private static PlayResult refused(String message) {
+    return new PlayResult(false, message, null);
   }
 
   private static String refusalMessage(UrlDecision.Reason reason) {
@@ -177,6 +326,7 @@ public final class PlaybackService {
   }
 
   private GuildMusicManager musicManager(long guildId) {
-    return managers.computeIfAbsent(guildId, id -> new GuildMusicManager(playerManager, queueMax));
+    return managers.computeIfAbsent(
+        guildId, id -> new GuildMusicManager(playerManager, queueMax));
   }
 }

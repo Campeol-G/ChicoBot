@@ -37,6 +37,7 @@ public final class Bot {
     playbackRef.set(new PlaybackService(connector, config));
     MusicCommands commands = new MusicCommands(playbackRef.get());
     jda.addEventListener(commands);
+    new IdleMonitor(jda, playbackRef.get(), config.idleDisconnectS()).start();
     registerPlay(jda);
 
     return jda;
