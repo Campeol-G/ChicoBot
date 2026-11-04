@@ -27,6 +27,8 @@ import net.dv8tion.jda.api.entities.channel.unions.AudioChannelUnion;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
+import net.dv8tion.jda.api.utils.messages.MessageCreateData;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageEditData;
 
@@ -56,6 +58,16 @@ public final class PreviewButtons extends ListenerAdapter {
   public static MessageEditData previewMessage(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
     return previewEdit(sessionId, tracks, totalDetected);
+  }
+
+  /** Same preview as a fresh message (for the context menu flow). */
+  public static MessageCreateData previewCreate(
+      UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
+    return new MessageCreateBuilder()
+        .setEmbeds(Embeds.importPreview(tracks, totalDetected))
+        .setComponents(previewComponents(sessionId, tracks))
+        .setAllowedMentions(Collections.emptyList())
+        .build();
   }
 
   @Override
@@ -234,13 +246,18 @@ public final class PreviewButtons extends ListenerAdapter {
       UUID sessionId, List<ParsedTrack> tracks, int total) {
     return new MessageEditBuilder()
         .setEmbeds(Embeds.importPreview(tracks, total))
-        .setComponents(
-            ActionRow.of(
-                Button.primary(PLAY_PREFIX + sessionId, "Play all"),
-                Button.danger(CANCEL_PREFIX + sessionId, "Cancel")),
-            ActionRow.of(removeMenu(sessionId, tracks)))
+        .setComponents(previewComponents(sessionId, tracks))
         .setAllowedMentions(Collections.emptyList())
         .build();
+  }
+
+  private static List<net.dv8tion.jda.api.components.MessageTopLevelComponent>
+      previewComponents(UUID sessionId, List<ParsedTrack> tracks) {
+    return List.of(
+        ActionRow.of(
+            Button.primary(PLAY_PREFIX + sessionId, "Play all"),
+            Button.danger(CANCEL_PREFIX + sessionId, "Cancel")),
+        ActionRow.of(removeMenu(sessionId, tracks)));
   }
 
   private static StringSelectMenu removeMenu(UUID sessionId, List<ParsedTrack> tracks) {

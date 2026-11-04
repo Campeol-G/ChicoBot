@@ -55,6 +55,7 @@ public final class Bot {
             sessions);
     jda.addEventListener(new MessageListener(playbackRef.get(), importFlow, config));
     jda.addEventListener(new PreviewButtons(sessions, playbackRef.get(), config));
+    jda.addEventListener(new ImageContextMenu(importFlow, config));
     new IdleMonitor(jda, playbackRef.get(), config.idleDisconnectS()).start();
     registerPlay(jda);
 
@@ -66,9 +67,11 @@ public final class Bot {
       Guild guild = jda.getGuildById(config.devGuildId().orElseThrow());
       if (guild != null) {
         MusicCommands.register(guild);
+        ImageContextMenu.register(guild);
         return;
       }
     }
     MusicCommands.registerGlobal(jda);
+    ImageContextMenu.registerGlobal(jda);
   }
 }
