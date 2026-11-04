@@ -1,5 +1,7 @@
 package dev.chico.bot.parser;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -42,15 +44,45 @@ public final class NoiseFilter {
   }
 
   /**
-   * True when any whole word is interface text (headers like "# Título ®"
-   * or "Title Album Date added"), even surrounded by OCR garbage tokens.
+   * True for header-like lines: more than one token where interface words and
+   * OCR garbage form a strict majority, with at least one interface hit
+   * (headers like "# Título ®" or "Title Album Date added"). Single-token
+   * lines never match, so real titles like "Add" or "Title" survive; whole-line
+   * exact matches stay in {@link #isNoise}.
    */
   public static boolean containsInterfaceWord(String normalizedText) {
     if (normalizedText == null) {
       return false;
     }
-    for (String token : normalizedText.toLowerCase(Locale.ROOT).split("\\s+")) {
+    List<String> tokens =
+        Arrays.stream(normalizedText.toLowerCase(Locale.ROOT).split("\\s+"))
+            .filter(token -> !token.isEmpty())
+            .toList();
+    if (tokens.size() < 2) {
+      return false;
+    }
+    int interfaceHits = 0;
+    int garbage = 0;
+    for (int i = 0; i < tokens.size(); i++) {
+      String token = tokens.get(i);
       if (INTERFACE_WORDS.contains(token)) {
+        interfaceHits++;
+      } else if (i + 1 < tokens.size()
+          && INTERFACE_WORDS.contains(token + " " + tokens.get(i + 1))) {
+        interfaceHits++;
+      } else if (SYMBOLS_ONLY.matcher(token).matches() || isGarbageToken(token)) {
+        garbage++;
+      }
+    }
+    return interfaceHits > 0 && (interfaceHits + garbage) * 2 > tokens.size();
+  }
+
+  private static boolean isGarbageToken(String token) {
+    if (token.length() > 2) {
+      return false;
+    }
+    for (int i = 0; i < token.length(); i++) {
+      if (!Character.isLetterOrDigit(token.charAt(i))) {
         return true;
       }
     }

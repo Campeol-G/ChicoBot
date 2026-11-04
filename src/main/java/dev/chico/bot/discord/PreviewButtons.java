@@ -45,6 +45,7 @@ public final class PreviewButtons extends ListenerAdapter {
   private final PlaybackService playback;
   private final Semaphore resolveSlots;
   private final Duration resolveTimeout;
+  private final java.util.Set<UUID> inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
   public PreviewButtons(
       ImportSession.Store sessions, PlaybackService playback, Config config) {
@@ -151,15 +152,24 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("Only the importer can do that.").setEphemeral(true).queue();
       return;
     }
+    if (!inFlight.add(sessionId)) {
+      event.reply("This import is already being queued.").setEphemeral(true).queue();
+      return;
+    }
     if (event.getMember() == null || event.getGuild() == null) {
+      inFlight.remove(sessionId);
       return;
     }
     AudioChannelUnion channel = event.getMember().getVoiceState().getChannel();
     if (channel == null) {
+      inFlight.remove(sessionId);
       event.reply("Join a voice channel first.").setEphemeral(true).queue();
       return;
     }
     List<ParsedTrack> tracks = session.orElseThrow().tracks();
+    // Take the session out now: a second click, Remove or Cancel during the
+    // resolve reports back instead of acting twice on the same batch.
+    sessions.remove(sessionId);
     long guildId = event.getGuild().getIdLong();
     event.deferEdit().queue();
     event
@@ -215,6 +225,7 @@ public final class PreviewButtons extends ListenerAdapter {
             java.util.concurrent.TimeUnit.MILLISECONDS)
         .whenComplete(
             (ignored, failure) -> {
+              inFlight.remove(sessionId);
               List<TrackCandidate> ordered = new ArrayList<>();
               for (int i = 0; i < tracks.size(); i++) {
                 TrackCandidate candidate = found.get(i);
@@ -229,7 +240,6 @@ public final class PreviewButtons extends ListenerAdapter {
                 enqueued = playback.enqueueResolved(guildId, ordered);
               }
               int didNotFit = ordered.size() - enqueued;
-              sessions.remove(sessionId);
               String report = "Enqueued " + enqueued + ".";
               if (notFound > 0) {
                 report += " " + notFound + " not found.";

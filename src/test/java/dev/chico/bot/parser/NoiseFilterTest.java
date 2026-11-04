@@ -55,6 +55,15 @@ class NoiseFilterTest {
   }
 
   @Test
+  void legitimateTitlesWithInterfaceWordsSurvive() {
+    assertFalse(NoiseFilter.containsInterfaceWord("Add"));
+    assertFalse(NoiseFilter.containsInterfaceWord("Title"));
+    assertFalse(NoiseFilter.containsInterfaceWord("Add Up"));
+    assertFalse(NoiseFilter.containsInterfaceWord("Album of the Year"));
+    assertFalse(NoiseFilter.containsInterfaceWord("The Title Track"));
+  }
+
+  @Test
   void symbolsAndNumbersAreNoise() {
     assertTrue(NoiseFilter.isNoise("#"));
     assertTrue(NoiseFilter.isNoise("•"));

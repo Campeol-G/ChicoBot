@@ -43,7 +43,10 @@ public final class Bot {
     playbackRef.set(new PlaybackService(connector, config));
     MusicCommands commands = new MusicCommands(playbackRef.get());
     jda.addEventListener(commands);
-    ImportSession.Store sessions = new ImportSession.Store();
+    ImportSession.Store sessions =
+        new ImportSession.Store(
+            java.time.Duration.ofSeconds(config.importSessionTtlS()),
+            java.time.Clock.systemUTC());
     ImportFromImage importFlow =
         new ImportFromImage(
             config,
