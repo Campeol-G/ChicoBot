@@ -102,25 +102,31 @@ public final class ImportFromImage {
       throw new ImportException(Reason.NO_IMAGES, "Send an image with your mention.");
     }
     UUID correlation = UUID.randomUUID();
-    long start = System.currentTimeMillis();
-    List<List<ParsedTrack>> perImage = new ArrayList<>();
-    for (AttachmentInput in : first) {
-      perImage.add(readOne(in));
+    org.slf4j.MDC.put("importId", correlation.toString());
+    try {
+      long start = System.currentTimeMillis();
+      List<List<ParsedTrack>> perImage = new ArrayList<>();
+      int index = 0;
+      for (AttachmentInput in : first) {
+        perImage.add(readOne(in, index++));
+      }
+      List<ParsedTrack> merged = TrackListMerger.merge(perImage);
+      int total = merged.size();
+      List<ParsedTrack> capped = merged.stream().limit(maxTracks).toList();
+      if (capped.isEmpty()) {
+        throw new ImportException(Reason.NO_TRACKS, "No tracks found in that image.");
+      }
+      ImportSession session = sessions.create(userId, guildId, capped);
+      log.info(
+          "import {} images={} tracks={} total={} elapsedMs={}",
+          correlation, first.size(), capped.size(), total, System.currentTimeMillis() - start);
+      return new ImportResult(session.id(), capped, total);
+    } finally {
+      org.slf4j.MDC.clear();
     }
-    List<ParsedTrack> merged = TrackListMerger.merge(perImage);
-    int total = merged.size();
-    List<ParsedTrack> capped = merged.stream().limit(maxTracks).toList();
-    if (capped.isEmpty()) {
-      throw new ImportException(Reason.NO_TRACKS, "No tracks found in that image.");
-    }
-    ImportSession session = sessions.create(userId, guildId, capped);
-    log.info(
-        "import {} images={} tracks={} total={} elapsedMs={}",
-        correlation, first.size(), capped.size(), total, System.currentTimeMillis() - start);
-    return new ImportResult(session.id(), capped, total);
   }
 
-  private List<ParsedTrack> readOne(AttachmentInput in) throws ImportException {
+  private List<ParsedTrack> readOne(AttachmentInput in, int index) throws ImportException {
     if (in == null
         || in.url() == null
         || AttachmentPolicy.validateReported(in, maxBytes, maxPixels)
@@ -128,6 +134,7 @@ public final class ImportFromImage {
       throw new ImportException(
           Reason.ATTACHMENT_REJECTED, "That image is not supported. Send a PNG or JPEG.");
     }
+    long stage = System.currentTimeMillis();
     byte[] raw = downloader.download(in);
     if (AttachmentPolicy.validateBytes(raw, maxPixels)
         instanceof AttachmentPolicy.Result.Rejected) {
@@ -141,7 +148,10 @@ public final class ImportFromImage {
       throw new ImportException(
           Reason.IMAGE_REJECTED, "That image could not be read. Try another screenshot.");
     }
+    log.debug("import image={} downloadPreprocessMs={} bytes={}",
+        index, System.currentTimeMillis() - stage, raw.length);
     OcrResult ocrResult;
+    stage = System.currentTimeMillis();
     try {
       ocrSlots.acquire();
       try {
@@ -155,6 +165,10 @@ public final class ImportFromImage {
       Thread.currentThread().interrupt();
       throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
     }
-    return parser.parse(ocrResult);
+    stage = System.currentTimeMillis() - stage;
+    List<ParsedTrack> parsed = parser.parse(ocrResult);
+    log.debug("import image={} ocrMs={} words={} tracks={}",
+        index, stage, ocrResult.words().size(), parsed.size());
+    return parsed;
   }
 }
