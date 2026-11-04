@@ -1,8 +1,14 @@
 package dev.chico.bot.discord;
 
 import club.minnced.discord.jdave.interop.JDaveSessionFactory;
+import dev.chico.bot.application.ImageDownloader;
+import dev.chico.bot.application.ImportFromImage;
+import dev.chico.bot.application.ImportSession;
 import dev.chico.bot.application.PlaybackService;
 import dev.chico.bot.config.Config;
+import dev.chico.bot.ocr.ImagePreprocessor;
+import dev.chico.bot.ocr.TesseractCliEngine;
+import dev.chico.bot.parser.DefaultTrackLineParser;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.audio.AudioModuleConfig;
@@ -37,6 +43,18 @@ public final class Bot {
     playbackRef.set(new PlaybackService(connector, config));
     MusicCommands commands = new MusicCommands(playbackRef.get());
     jda.addEventListener(commands);
+    ImportSession.Store sessions = new ImportSession.Store();
+    ImportFromImage importFlow =
+        new ImportFromImage(
+            config,
+            new ImageDownloader(config.imgMaxBytes()),
+            new TesseractCliEngine(
+                config.ocrLangs(), java.time.Duration.ofMillis(config.ocrTimeoutMs())),
+            new DefaultTrackLineParser(),
+            new ImagePreprocessor(config.imgMaxPixels()),
+            sessions);
+    jda.addEventListener(new MessageListener(playbackRef.get(), importFlow, config));
+    jda.addEventListener(new PreviewButtons(sessions, playbackRef.get(), config));
     new IdleMonitor(jda, playbackRef.get(), config.idleDisconnectS()).start();
     registerPlay(jda);
 

@@ -77,6 +77,28 @@ public final class Embeds {
         .build();
   }
 
+  /** Preview of an image import. Every track name is escaped here. */
+  public static MessageEmbed importPreview(
+      List<dev.chico.bot.parser.ParsedTrack> tracks, int totalDetected) {
+    EmbedBuilder builder = new EmbedBuilder().setTitle("Import preview").setColor(Color.BLUE);
+    StringBuilder lines = new StringBuilder();
+    for (int i = 0; i < tracks.size(); i++) {
+      dev.chico.bot.parser.ParsedTrack track = tracks.get(i);
+      lines.append(i + 1).append(". ").append(TextSanitizer.escape(track.title()));
+      if (!track.artist().isEmpty()) {
+        lines.append(" - ").append(TextSanitizer.escape(track.artist()));
+      }
+      lines.append('\n');
+    }
+    builder.setDescription(lines.toString().trim());
+    if (totalDetected > tracks.size()) {
+      builder.setFooter("Showing " + tracks.size() + " of " + totalDetected + ".");
+    } else {
+      builder.setFooter(tracks.size() + " tracks.");
+    }
+    return builder.build();
+  }
+
   public static MessageEmbed info(String message) {
     return new EmbedBuilder()
         .setDescription(TextSanitizer.escape(message))

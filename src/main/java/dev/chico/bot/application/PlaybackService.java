@@ -103,6 +103,25 @@ public final class PlaybackService {
     return musicManager(guildId).sendHandler();
   }
 
+  /** Resolves one query to ordered candidates. Used by the import preview. */
+  public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
+    return resolver.resolve(query);
+  }
+
+  /** Connects to a voice channel. Used by the import preview. */
+  public void connect(long guildId, long voiceChannelId) {
+    connector.connect(guildId, voiceChannelId);
+  }
+
+  /**
+   * Enqueues already-resolved candidates in order with one call, cloning each
+   * playable track. Returns how many were accepted before the queue filled.
+   */
+  public int enqueueResolved(long guildId, List<TrackCandidate> candidates) {
+    return musicManager(guildId)
+        .enqueueAll(candidates.stream().map(PlaybackService::cloneOf).toList());
+  }
+
   /** Resolves the input, enqueues the best candidate and reports what happened. */
   public CompletableFuture<PlayResult> play(
       long guildId, long voiceChannelId, long userId, String input) {
