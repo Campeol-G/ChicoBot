@@ -3,12 +3,31 @@
 Personal Discord music bot (Java): plays YouTube and SoundCloud tracks and
 imports tracks from playlist screenshots through local OCR, with a preview.
 
-Status: early scaffold (Task 1). The bot connects and answers `/ping`.
+Status: v1 feature-complete. The bot connects, plays by link or search,
+keeps a per-guild queue, and imports YouTube Music / Spotify screenshots
+via Tesseract (`@bot` + image → preview → Play all).
+
+## Features
+
+- `/play <name or link>`, `/pause`, `/resume`, `/skip [target]`, `/stop`,
+  `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/ping`.
+- `@bot p <query>` in a channel works like `/play`.
+- Mention the bot with a playlist screenshot (PNG/JPEG, up to 3 images):
+  it reads the tracks with local OCR, shows a preview with **Play all**,
+  **Remove items** and **Cancel** buttons, then queues the confirmed list
+  in print order. Only the importer can confirm.
+- Message command **Play music from image** for screenshots in older messages.
+- Automatic fallback between YouTube and SoundCloud; per-source circuit
+  breaker so a YouTube outage does not stall a 25-track import.
+- Links to Spotify / Apple Music tracks are accepted as metadata: the bot
+  reads the title and artist and searches YouTube / SoundCloud. Playlist
+  links are refused (or reduced to one track); no playlist ever floods the queue.
 
 ## Requirements
 
-- Linux x64, Java 25+ (tested on JDK 27)
-- Maven 3.10+
+- Linux x64, Java 25+ (tested on JDK 27), Maven 3.10+
+- Tesseract 5.x with `por` and `eng` data
+  (`sudo pacman -S tesseract tesseract-data-por tesseract-data-eng` on Arch)
 - Token in `~/.config/chicos-bot/env` (mode 600), created from `.env.example`
 
 ## Run
@@ -27,7 +46,68 @@ java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true -jar target/chi
 ```
 
 Do not restart in a loop: Discord allows 1000 IDENTIFY per 24 h and resets the
-token when that is exceeded.
+token when that is exceeded. The systemd unit uses `RestartSec=10` for the
+same reason.
+
+For a server install, see `deploy/chicos-bot.service`.
+
+## Creating the bot (Developer Portal)
+
+In https://discord.com/developers/applications, on the bot app:
+
+- **Bot → Public Bot:** off. With it on, anyone with the link can add the bot
+  to other servers.
+- **Bot → Requires OAuth2 Code Grant:** off.
+- **Bot → Privileged Gateway Intents:** all three off (Presence, Server
+  Members, Message Content). The bot receives mentions, attachments on
+  mention messages, and context-menu targets without them.
+- **Installation → Installation Contexts:** Guild Install only; User Install off.
+- **Installation → Default Install Settings:** scopes `bot` and
+  `applications.commands`, with these permissions (integer `3230720`):
+  View Channels, Send Messages, Embed Links, Read Message History,
+  Connect, Speak. No 2FA permission, no administrator.
+- After writing the token to the env file, use **Bot → Reset Token** so no
+  older copy stays valid. Never paste the token in chat, logs or code.
+
+Invite link (replace both IDs; the second form targets the test server):
+
+```text
+https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=bot%20applications.commands&permissions=3230720&integration_type=0
+https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=bot%20applications.commands&permissions=3230720&integration_type=0&guild_id=<GUILD_ID>&disable_guild_select=true
+```
+
+With `DEV_GUILD_ID` set, slash commands register on the test server
+(instant). Without it they register globally (up to 1 hour to appear).
+
+## Configuration
+
+All variables live in `~/.config/chicos-bot/env` (see `.env.example`).
+Only `DISCORD_TOKEN` is required.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | — | Bot token (required). |
+| `DEV_GUILD_ID` | empty | Test server id: instant command registration. Empty = global. |
+| `OCR_LANGS` | `por+eng` | Tesseract languages. |
+| `OCR_TIMEOUT_MS` | `8000` | Timeout per OCR run. |
+| `OCR_MAX_CONCURRENCY` | `2` | Simultaneous OCR processes. |
+| `IMG_MAX_BYTES` | `8388608` | Max image size (8 MB). |
+| `IMG_MAX_PIXELS` | `16777216` | Max pixels (4096×4096). |
+| `IMPORT_MAX_TRACKS` | `25` | Tracks per import (select-menu limit). |
+| `IMPORT_SESSION_TTL_S` | `300` | Preview lifetime. |
+| `COOLDOWN_USER_S` | `15` | Seconds between imports per user. |
+| `QUEUE_MAX` | `200` | Max queued tracks per server. |
+| `IDLE_DISCONNECT_S` | `300` | Voice disconnect when idle. |
+| `MATCH_THRESHOLD` | `0.0` | Off in v1: the score only orders, never refuses. |
+| `RESOLVE_TIMEOUT_MS` | `8000` | Timeout per track resolution. |
+| `RESOLVE_CONCURRENCY` | `4` | Parallel resolutions on Play all. |
+| `SOURCE_FAILURE_THRESHOLD` | `3` | Consecutive failures before a source degrades. |
+| `SOURCE_DEGRADED_COOLDOWN_S` | `300` | How long a source stays degraded. |
+| `PLAY_COOLDOWN_S` | `5` | Cooldown on `/play` per user. |
+| `LOG_LEVEL` | `INFO` | Log level. |
+| `YT_REFRESH_TOKEN` | empty | Optional burner-account OAuth (below). |
+| `YT_CIPHER_URL` | empty | Remote cipher URL (below). Empty = local cipher. |
+| `YT_CIPHER_PASSWORD` | empty | Remote cipher password. |
 
 ## YouTube login-wall (OAuth, optional)
 
@@ -73,8 +153,45 @@ Recheck each `youtube-source` release: clear `YT_CIPHER_URL`, restart, and play
 a login-walled video. If it plays, the local cipher works again — drop the
 remote cipher and bump the pinned version.
 
+YouTube is best-effort: when it is down, the bot falls back to SoundCloud
+automatically. Using YouTube with a personal bot and no monetization is the
+accepted risk; large public bots were shut down over its terms of service in
+2021, so keep this bot private and do not monetize it.
+
+## Offline OCR check
+
+```bash
+mvn -q package -DskipTests
+java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true \
+  -cp target/chicos-bot.jar dev.chico.bot.ocr.OcrCli <image.png>
+```
+
+Prints one `title - artist` line per detected track. Method and recall
+numbers: `docs/ocr-evaluation.md`.
+
 ## Test
 
 ```bash
 mvn -q test
 ```
+
+Unit tests need no network, Tesseract or Discord. Integration tests carry
+`@Tag("integration")` and are excluded by default; run them with
+`mvn -Dgroups=integration -DexcludedGroups= test`.
+
+## Security notes
+
+- Images are validated in stages (declared type/size/dimensions, CDN host
+  allowlist, magic bytes, header dimensions) and processed in memory; the
+  OCR runs in an isolated process with a timeout. Nothing is persisted.
+- Only `YoutubeAudioSourceManager` and SoundCloud are registered; the HTTP
+  and local Lavaplayer sources are never enabled.
+- Every message disables mentions and escapes OCR titles, authors and URLs.
+- Logs carry a correlation id per import, stage durations and counts —
+  never image content, OCR text or the token.
+
+## Personal use, no warranty
+
+This is a personal bot for a few servers: no database, no sharding, no
+public hosting, no monetization. It is provided as-is under the MIT license,
+without warranty of any kind.

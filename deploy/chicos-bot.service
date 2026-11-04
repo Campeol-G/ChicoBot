@@ -1,0 +1,24 @@
+[Unit]
+Description=chicos-bot personal Discord music bot
+After=network-online.target docker.service
+Wants=network-online.target
+# No auto-restart storm: Discord resets the token after 1000 IDENTIFY / 24h.
+
+[Service]
+Type=simple
+# Adjust these three paths to the install location.
+WorkingDirectory=/opt/chicos-bot
+EnvironmentFile=/opt/chicos-bot/env
+ExecStart=/usr/bin/java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true -jar /opt/chicos-bot/chicos-bot.jar
+Restart=on-failure
+RestartSec=10
+# Hardening for a bot that processes untrusted images and text.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+MemoryMax=1G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
