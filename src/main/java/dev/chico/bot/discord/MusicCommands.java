@@ -9,7 +9,7 @@ import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 
-/** Minimal spike command: plays one URL. Policy and resolver arrive in Phase 2. */
+/** Plays audio from a name or URL through the resolver. */
 public final class MusicCommands extends ListenerAdapter {
 
   static final String PLAY = "play";
@@ -23,16 +23,16 @@ public final class MusicCommands extends ListenerAdapter {
   static void register(Guild guild) {
     guild
         .upsertCommand(
-            Commands.slash(PLAY, "Play audio from a URL")
-                .addOption(OptionType.STRING, "url", "Audio URL to play", true))
+            Commands.slash(PLAY, "Play a song by name or link")
+                .addOption(OptionType.STRING, "query", "Song name or audio URL", true))
         .queue();
   }
 
   static void registerGlobal(net.dv8tion.jda.api.JDA jda) {
     jda
         .upsertCommand(
-            Commands.slash(PLAY, "Play audio from a URL")
-                .addOption(OptionType.STRING, "url", "Audio URL to play", true))
+            Commands.slash(PLAY, "Play a song by name or link")
+                .addOption(OptionType.STRING, "query", "Song name or audio URL", true))
         .queue();
   }
 
@@ -41,9 +41,9 @@ public final class MusicCommands extends ListenerAdapter {
     if (!PLAY.equals(event.getName())) {
       return;
     }
-    OptionMapping option = event.getOption("url");
+    OptionMapping option = event.getOption("query");
     if (option == null || event.getMember() == null || event.getGuild() == null) {
-      event.reply("Usage: /play <url> in a server.").setEphemeral(true).queue();
+      event.reply("Usage: /play <song name or link> in a server.").setEphemeral(true).queue();
       return;
     }
     AudioChannelUnion channel = event.getMember().getVoiceState().getChannel();
@@ -52,8 +52,10 @@ public final class MusicCommands extends ListenerAdapter {
       return;
     }
     event.deferReply().queue();
-    String url = option.getAsString();
-    playback.playUrl(event.getGuild().getIdLong(), channel.getIdLong(), url);
-    event.getHook().sendMessage("Loading: " + url).queue();
+    String input = option.getAsString();
+    long guildId = event.getGuild().getIdLong();
+    playback
+        .play(guildId, channel.getIdLong(), input)
+        .thenAccept(message -> event.getHook().sendMessage(message).queue());
   }
 }
