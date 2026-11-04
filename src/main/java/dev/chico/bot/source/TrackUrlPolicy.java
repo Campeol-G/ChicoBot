@@ -22,6 +22,8 @@ public final class TrackUrlPolicy {
   private static final Set<String> SOUNDCLOUD_HOSTS =
       Set.of("soundcloud.com", "www.soundcloud.com", "m.soundcloud.com");
   private static final Set<String> SPOTIFY_HOSTS = Set.of("open.spotify.com", "spotify.link");
+  private static final Set<String> APPLE_MUSIC_HOSTS =
+      Set.of("music.apple.com", "www.music.apple.com");
 
   private static final Set<String> SOUNDCLOUD_SECTIONS =
       Set.of(
@@ -66,8 +68,14 @@ public final class TrackUrlPolicy {
       return rejected(UrlDecision.Reason.INVALID);
     }
     String lowerHost = host.toLowerCase();
-    if (SPOTIFY_HOSTS.contains(lowerHost)) {
-      return rejected(UrlDecision.Reason.SPOTIFY);
+    if (lowerHost.equals("spotify.link")) {
+      return spotifyShort(uri);
+    }
+    if (lowerHost.equals("open.spotify.com")) {
+      return spotify(uri);
+    }
+    if (APPLE_MUSIC_HOSTS.contains(lowerHost)) {
+      return appleMusic(uri);
     }
     if (YOUTUBE_HOSTS.contains(lowerHost)) {
       return youtube(uri);
@@ -149,6 +157,60 @@ public final class TrackUrlPolicy {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
     return accepted(Source.SOUNDCLOUD, uri);
+  }
+
+  private static UrlDecision spotify(URI uri) {
+    List<String> segments = pathSegments(uri.getPath());
+    if (segments.size() < 2 || segments.get(1).isEmpty()) {
+      return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    }
+    return switch (segments.get(0)) {
+      case "track", "episode" -> accepted(Source.SPOTIFY, uri);
+      case "album", "playlist", "show" -> rejected(UrlDecision.Reason.PLAYLIST);
+      default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    };
+  }
+
+  private static UrlDecision spotifyShort(URI uri) {
+    List<String> segments = pathSegments(uri.getPath());
+    if (segments.size() != 1) {
+      return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    }
+    // Short links hide the content type; the resolver classifies after resolving.
+    return accepted(Source.SPOTIFY, uri);
+  }
+
+  private static UrlDecision appleMusic(URI uri) {
+    List<String> segments = pathSegments(uri.getPath());
+    if (segments.isEmpty()) {
+      return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    }
+    // Store links carry a country prefix (/br/album/...); shared links may omit it.
+    int kind = 0;
+    if (segments.size() > 1 && isAppleKind(segments.get(1))) {
+      kind = 1;
+    }
+    return switch (segments.get(kind)) {
+      case "song" -> segments.size() > kind + 1 ? accepted(Source.APPLE_MUSIC, uri)
+          : rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+      case "album" -> {
+        String trackId = queryParams(uri.getQuery()).get("i");
+        if (trackId != null && !trackId.isEmpty()) {
+          yield accepted(Source.APPLE_MUSIC, uri);
+        }
+        yield rejected(UrlDecision.Reason.PLAYLIST);
+      }
+      case "playlist" -> rejected(UrlDecision.Reason.PLAYLIST);
+      default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    };
+  }
+
+  private static boolean isAppleKind(String segment) {
+    return segment.equals("song")
+        || segment.equals("album")
+        || segment.equals("playlist")
+        || segment.equals("artist")
+        || segment.equals("music-video");
   }
 
   private static List<String> pathSegments(String path) {

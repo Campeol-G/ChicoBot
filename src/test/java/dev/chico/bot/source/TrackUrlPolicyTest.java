@@ -157,10 +157,69 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void spotifyRejected() {
+  void spotifyTrackAcceptedAsMetadataSource() {
+    assertAccepted(
+        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm", Source.SPOTIFY);
+  }
+
+  @Test
+  void spotifyEpisodeAcceptedAsMetadataSource() {
+    assertAccepted(
+        "https://open.spotify.com/episode/4uLU6hMCjMI75M1A2tKUQm", Source.SPOTIFY);
+  }
+
+  @Test
+  void spotifyShortLinkAcceptedAsMetadataSource() {
+    assertAccepted("https://spotify.link/abc123", Source.SPOTIFY);
+  }
+
+  @Test
+  void spotifyCollectionsRejectedAsPlaylist() {
     assertRejected(
-        "https://open.spotify.com/track/xyz", UrlDecision.Reason.SPOTIFY);
-    assertRejected("https://spotify.link/abc123", UrlDecision.Reason.SPOTIFY);
+        "https://open.spotify.com/album/52bcS8R0L0JKVxQb6MZFmW",
+        UrlDecision.Reason.PLAYLIST);
+    assertRejected(
+        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+        UrlDecision.Reason.PLAYLIST);
+    assertRejected(
+        "https://open.spotify.com/show/4uLU6hMCjMI75M1A2tKUQm",
+        UrlDecision.Reason.PLAYLIST);
+  }
+
+  @Test
+  void spotifyProfilesRejected() {
+    assertRejected(
+        "https://open.spotify.com/artist/4uLU6hMCjMI75M1A2tKUQm",
+        UrlDecision.Reason.UNSUPPORTED_LINK);
+    assertRejected(
+        "https://open.spotify.com/user/someone", UrlDecision.Reason.UNSUPPORTED_LINK);
+  }
+
+  @Test
+  void appleMusicSongAcceptedAsMetadataSource() {
+    assertAccepted(
+        "https://music.apple.com/br/album/never-gonna-give-you-up/1559523357?i=1559523359",
+        Source.APPLE_MUSIC);
+    assertAccepted(
+        "https://music.apple.com/us/song/never-gonna-give-you-up/1559523359",
+        Source.APPLE_MUSIC);
+  }
+
+  @Test
+  void appleMusicCollectionsRejectedAsPlaylist() {
+    assertRejected(
+        "https://music.apple.com/br/album/whenever-you-need-somebody/1559523357",
+        UrlDecision.Reason.PLAYLIST);
+    assertRejected(
+        "https://music.apple.com/br/playlist/topsify/pl.1234567890abcdef",
+        UrlDecision.Reason.PLAYLIST);
+  }
+
+  @Test
+  void appleMusicArtistRejected() {
+    assertRejected(
+        "https://music.apple.com/br/artist/rick-astley/384236",
+        UrlDecision.Reason.UNSUPPORTED_LINK);
   }
 
   @Test
