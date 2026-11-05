@@ -15,9 +15,13 @@ import net.dv8tion.jda.api.entities.channel.unions.AudioChannelUnion;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Handles `@bot p <query>` and `@bot` + image imports. Ignores bots and DMs. */
 public final class MessageListener extends ListenerAdapter {
+
+  private static final Logger log = LoggerFactory.getLogger(MessageListener.class);
 
   private final PlaybackService playback;
   private final ImportFromImage importFlow;
@@ -125,6 +129,11 @@ public final class MessageListener extends ListenerAdapter {
               attachment.getSize(),
               attachment.getWidth(),
               attachment.getHeight()));
+    }
+    for (AttachmentInput input : inputs) {
+      log.debug(
+          "import request contentType={} size={} dims={}x{}",
+          input.contentType(), input.size(), input.width(), input.height());
     }
     if (inputs.isEmpty()) {
       event

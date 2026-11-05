@@ -200,4 +200,39 @@ class ImportResilienceTest {
     }
     assertTrue(correlationSeen, "expected an importId in the MDC of import logs");
   }
+
+  @Test
+  void attachmentRejectionLogsReasonAndReportedMetadata() throws Exception {
+    Logger logger = (Logger) LoggerFactory.getLogger(ImportFromImage.class);
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      byte[] png = tinyPng();
+      var oversized =
+          new AttachmentInput(
+              new URI("https://cdn.discordapp.com/attachments/1/2/big.png"),
+              "image/png",
+              9_000_000L,
+              1290,
+              2796);
+      try {
+        flow(new BytesDownloader(png), new FixedOcr(noWords()))
+            .run(1L, 2L, List.of(oversized))
+            .join();
+        fail("expected the import to fail");
+      } catch (CompletionException e) {
+        assertInstanceOf(ImportFromImage.ImportException.class, e.getCause());
+      }
+    } finally {
+      logger.detachAppender(appender);
+    }
+    boolean diagnosticSeen =
+        appender.list.stream()
+            .anyMatch(
+                event ->
+                    event.getFormattedMessage().contains("ATTACHMENT_REJECTED")
+                        && event.getFormattedMessage().contains("9000000"));
+    assertTrue(diagnosticSeen, "expected a rejection log with reason and reported size");
+  }
 }

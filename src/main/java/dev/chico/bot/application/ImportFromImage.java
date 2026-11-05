@@ -131,13 +131,23 @@ public final class ImportFromImage {
         || in.url() == null
         || AttachmentPolicy.validateReported(in, maxBytes, maxPixels)
             instanceof AttachmentPolicy.Result.Rejected) {
+      log.warn(
+          "import rejected reason={} contentType={} size={} dims={}x{}",
+          Reason.ATTACHMENT_REJECTED,
+          in == null ? null : in.contentType(),
+          in == null ? -1 : in.size(),
+          in == null ? -1 : in.width(),
+          in == null ? -1 : in.height());
       throw new ImportException(
           Reason.ATTACHMENT_REJECTED, "That image is not supported. Send a PNG or JPEG.");
     }
     long stage = System.currentTimeMillis();
     byte[] raw = downloader.download(in);
     if (AttachmentPolicy.validateBytes(raw, maxPixels)
-        instanceof AttachmentPolicy.Result.Rejected) {
+        instanceof AttachmentPolicy.Result.Rejected rejected) {
+      log.warn(
+          "import rejected reason={} bytes={} policy={}",
+          Reason.IMAGE_REJECTED, raw.length, rejected.reason());
       throw new ImportException(
           Reason.IMAGE_REJECTED, "That image is not supported. Send a PNG or JPEG.");
     }
