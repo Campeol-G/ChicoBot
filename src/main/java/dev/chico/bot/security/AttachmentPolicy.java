@@ -100,7 +100,7 @@ public final class AttachmentPolicy {
       return false;
     }
     String base = contentType.split(";")[0].strip().toLowerCase();
-    return base.equals("image/png") || base.equals("image/jpeg");
+    return base.equals("image/png") || base.equals("image/jpeg") || base.equals("image/webp");
   }
 
   private static boolean hasImageMagic(byte[] bytes) {
@@ -115,6 +115,26 @@ public final class AttachmentPolicy {
         && (bytes[7] & 0xFF) == 0x0A) {
       return true;
     }
-    return (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8 && (bytes[2] & 0xFF) == 0xFF;
+    if (bytes.length >= 3
+        && (bytes[0] & 0xFF) == 0xFF
+        && (bytes[1] & 0xFF) == 0xD8
+        && (bytes[2] & 0xFF) == 0xFF) {
+      return true;
+    }
+    return isWebpMagic(bytes);
+  }
+
+  private static boolean isWebpMagic(byte[] bytes) {
+    if (bytes.length < 12) {
+      return false;
+    }
+    return bytes[0] == 'R'
+        && bytes[1] == 'I'
+        && bytes[2] == 'F'
+        && bytes[3] == 'F'
+        && bytes[8] == 'W'
+        && bytes[9] == 'E'
+        && bytes[10] == 'B'
+        && bytes[11] == 'P';
   }
 }

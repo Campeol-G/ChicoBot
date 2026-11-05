@@ -26,6 +26,16 @@ class AttachmentPolicyTest {
     return out.toByteArray();
   }
 
+  private static byte[] webpBytes() throws Exception {
+    try (var in =
+        AttachmentPolicyTest.class.getResourceAsStream("/webp/sample.webp")) {
+      if (in == null) {
+        throw new IllegalStateException("missing test resource /webp/sample.webp");
+      }
+      return in.readAllBytes();
+    }
+  }
+
   private static byte[] forgedPngHeader(int width, int height) {
     byte[] bytes = new byte[8 + 8 + 13 + 4];
     byte[] signature = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
@@ -72,6 +82,12 @@ class AttachmentPolicyTest {
   }
 
   @Test
+  void realWebpBytesAccepted() throws Exception {
+    var result = AttachmentPolicy.validateBytes(webpBytes(), 4096L * 4096L);
+    assertInstanceOf(AttachmentPolicy.Result.Accepted.class, result);
+  }
+
+  @Test
   void garbageBytesRejected() {
     var result = AttachmentPolicy.validateBytes(new byte[] {0, 1, 2, 3}, 4096L * 4096L);
     assertInstanceOf(AttachmentPolicy.Result.Rejected.class, result);
@@ -103,6 +119,14 @@ class AttachmentPolicyTest {
         AttachmentPolicy.validateReported(input("text/plain", 100, 10, 10), 8_388_608L,
             4096L * 4096L);
     assertInstanceOf(AttachmentPolicy.Result.Rejected.class, checked);
+  }
+
+  @Test
+  void webpContentTypeAccepted() throws Exception {
+    var checked =
+        AttachmentPolicy.validateReported(input("image/webp", 100, 10, 10), 8_388_608L,
+            4096L * 4096L);
+    assertInstanceOf(AttachmentPolicy.Result.Accepted.class, checked);
   }
 
   @Test

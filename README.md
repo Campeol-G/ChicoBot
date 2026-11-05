@@ -12,7 +12,7 @@ via Tesseract (`@bot` + image → preview → Play all).
 - `/play <name or link>`, `/pause`, `/resume`, `/skip [target]`, `/stop`,
   `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/ping`.
 - `@bot p <query>` in a channel works like `/play`.
-- Mention the bot with a playlist screenshot (PNG/JPEG, up to 3 images):
+- Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 3 images):
   it reads the tracks with local OCR, shows a preview with **Play all**,
   **Remove items** and **Cancel** buttons, then queues the confirmed list
   in print order. Only the importer can confirm.
