@@ -56,7 +56,7 @@ public final class DefaultTrackLineParser implements TrackLineParser {
     }
     List<ParsedTrack> tracks = new ArrayList<>();
     for (List<ContentLine> row : groupRows(content)) {
-      trackOf(row).ifPresent(tracks::add);
+      tracks.addAll(tracksOf(row));
     }
     return List.copyOf(tracks);
   }
@@ -65,25 +65,38 @@ public final class DefaultTrackLineParser implements TrackLineParser {
     return words.stream().mapToDouble(OcrWord::confidence).average().orElse(0);
   }
 
-  private static java.util.Optional<ParsedTrack> trackOf(List<ContentLine> row) {
+  /**
+   * One row is usually one track (title, then artist), but dense rhythm merges
+   * several tracks into a row. The pair keeps the old behavior; every extra
+   * line becomes a title-only track instead of vanishing silently.
+   */
+  private static List<ParsedTrack> tracksOf(List<ContentLine> row) {
+    List<ParsedTrack> tracks = new ArrayList<>();
+    if (row.isEmpty()) {
+      return tracks;
+    }
     List<String> parts = new ArrayList<>();
     for (ContentLine line : row) {
       parts.add(TextNormalizer.normalize(line.text()));
     }
-    if (parts.isEmpty()) {
-      return java.util.Optional.empty();
-    }
     String title = parts.get(0);
-    String artist = "";
-    if (parts.size() > 1) {
-      artist = splitArtist(parts.get(1));
+    String artist = parts.size() > 1 ? splitArtist(parts.get(1)) : "";
+    if (!title.isEmpty()) {
+      tracks.add(track(row, title, artist));
     }
-    if (title.isEmpty()) {
-      return java.util.Optional.empty();
+    for (int i = 2; i < parts.size(); i++) {
+      String extra = parts.get(i);
+      if (!extra.isEmpty()) {
+        tracks.add(track(row, extra, ""));
+      }
     }
+    return tracks;
+  }
+
+  private static ParsedTrack track(List<ContentLine> row, String title, String artist) {
     String raw = title + (artist.isEmpty() ? "" : " - " + artist);
     double confidence = row.stream().mapToDouble(ContentLine::confidence).average().orElse(0);
-    return java.util.Optional.of(new ParsedTrack(raw, title, artist, confidence));
+    return new ParsedTrack(raw, title, artist, confidence);
   }
 
   private record ContentLine(List<OcrWord> words, String text) {
