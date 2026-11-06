@@ -27,7 +27,10 @@ public final class Ranker {
           "nightcore",
           "mashup",
           "reverb",
-          "tiktok");
+          "tiktok",
+          "lyric",
+          "lyrics",
+          "letra");
 
   private static final long SHORT_SECONDS = 30;
   private static final long LONG_SECONDS = 15 * 60;
@@ -38,6 +41,11 @@ public final class Ranker {
 
   public Ranker(double matchThreshold) {
     this.matchThreshold = matchThreshold;
+  }
+
+  /** Minimum score for an OCR-imported track; text queries are never gated. */
+  public double threshold() {
+    return matchThreshold;
   }
 
   public double score(TrackCandidate candidate, String targetText) {

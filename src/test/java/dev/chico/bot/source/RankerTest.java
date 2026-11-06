@@ -59,6 +59,27 @@ class RankerTest {
   }
 
   @Test
+  void lyricVideoScoresLowerThanOfficialWhenTargetHasNoLyric() {
+    Ranker ranker = new Ranker(0.0);
+    String target = "City Lights Nujabes Pase Rock Subs";
+
+    double official =
+        ranker.score(
+            candidate(
+                "Nujabes - City Lights (feat. Pase Rock & Substantial) [Official Audio]",
+                "Nujabes",
+                200),
+            target);
+    double lyric =
+        ranker.score(
+            candidate(
+                "City Light - Nujabes ft Pase Rock y Sustantial (Letra en español)", "Hikari", 200),
+            target);
+
+    assertTrue(official > lyric, "official audio should score higher than a lyric video");
+  }
+
+  @Test
   void bestNeverRefusesByThreshold() {
     Ranker ranker = new Ranker(0.9);
     TrackCandidate terrible = candidate("zzz qqq", "Xyz Abc", 200);

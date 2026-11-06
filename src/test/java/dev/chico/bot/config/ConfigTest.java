@@ -18,7 +18,7 @@ class ConfigTest {
     Config config = new Config(envWithToken());
 
     assertEquals(8388608L, config.imgMaxBytes());
-    assertEquals(0.0, config.matchThreshold());
+    assertEquals(0.6, config.matchThreshold());
     assertEquals(25, config.importMaxTracks());
     assertTrue(config.devGuildId().isEmpty());
   }

@@ -58,13 +58,36 @@ public final class DefaultTrackResolver implements TrackResolver {
     if (query instanceof UrlQuery url) {
       return resolveUrl(url);
     }
-    String text =
-        switch (query) {
-          case TextQuery t -> t.text();
-          case OcrQuery o -> o.track().title() + " " + o.track().artist();
-          case UrlQuery u -> throw new IllegalStateException("unreachable");
-        };
+    if (query instanceof OcrQuery ocr) {
+      String text = ocr.track().title() + " " + ocr.track().artist();
+      // YouTube results below the threshold do not count: SoundCloud still
+      // gets its chance before the track becomes "not found".
+      return searchSource(Source.YOUTUBE, text)
+          .thenCompose(
+              youtube ->
+                  rankedAboveThreshold(youtube, text).isEmpty()
+                      ? searchSource(Source.SOUNDCLOUD, text)
+                          .thenApply(
+                              soundcloud -> rankedAboveThreshold(soundcloud, text))
+                      : CompletableFuture.completedFuture(rankedAboveThreshold(youtube, text)));
+    }
+    String text = ((TextQuery) query).text();
     return resolveSearch(text).thenApply(candidates -> ranked(candidates, text));
+  }
+
+  /**
+   * Batch imports have no per-track user review, so an OCR query whose best
+   * match is poor becomes "not found" instead of queueing an unrelated video.
+   * Single `/play` queries keep the old order-only behavior: the user sees
+   * now-playing and skips when it is wrong.
+   */
+  private List<TrackCandidate> rankedAboveThreshold(
+      List<TrackCandidate> candidates, String text) {
+    double threshold = ranker.threshold();
+    return candidates.stream()
+        .sorted(Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text)).reversed())
+        .filter(candidate -> ranker.score(candidate, text) >= threshold)
+        .toList();
   }
 
   private CompletableFuture<List<TrackCandidate>> resolveUrl(UrlQuery query) {

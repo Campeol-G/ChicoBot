@@ -98,7 +98,7 @@ Only `DISCORD_TOKEN` is required.
 | `COOLDOWN_USER_S` | `15` | Seconds between imports per user. |
 | `QUEUE_MAX` | `200` | Max queued tracks per server. |
 | `IDLE_DISCONNECT_S` | `300` | Voice disconnect when idle. |
-| `MATCH_THRESHOLD` | `0.0` | Off in v1: the score only orders, never refuses. |
+| `MATCH_THRESHOLD` | `0.6` | Minimum score for an OCR-imported track (below → "not found"); `/play` text queries are never refused. Set `0.0` to disable. |
 | `RESOLVE_TIMEOUT_MS` | `8000` | Timeout per track resolution. |
 | `RESOLVE_CONCURRENCY` | `4` | Parallel resolutions on Play all. |
 | `SOURCE_FAILURE_THRESHOLD` | `3` | Consecutive failures before a source degrades. |

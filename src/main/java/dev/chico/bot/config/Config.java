@@ -108,7 +108,7 @@ public final class Config {
   }
 
   public double matchThreshold() {
-    return parseDouble("MATCH_THRESHOLD", 0.0);
+    return parseDouble("MATCH_THRESHOLD", 0.6);
   }
 
   public String logLevel() {

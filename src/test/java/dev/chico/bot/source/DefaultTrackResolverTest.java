@@ -362,4 +362,72 @@ class DefaultTrackResolverTest {
     assertEquals(0, youtube.searches.get());
     assertEquals(0, soundcloud.searches.get());
   }
+
+  private static DefaultTrackResolver resolverWithThreshold(
+      FakeLoader youtube, FakeLoader soundcloud, double threshold) {
+    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
+    loaders.put(Source.YOUTUBE, youtube);
+    loaders.put(Source.SOUNDCLOUD, soundcloud);
+    return new DefaultTrackResolver(
+        loaders,
+        new Ranker(threshold),
+        new CircuitBreaker(3, Duration.ofMinutes(5), Clock.systemUTC()),
+        Duration.ofSeconds(5));
+  }
+
+  @Test
+  void ocrQueryBelowThresholdYieldsEmpty() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"));
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.6);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(new dev.chico.bot.parser.ParsedTrack("raw", "Sp.lral", "Nujabes", 90.0)))
+            .get();
+
+    assertTrue(result.isEmpty());
+    assertEquals(1, youtube.searches.get());
+    assertEquals(1, soundcloud.searches.get());
+  }
+
+  @Test
+  void ocrQueryAboveThresholdRanksFirst() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        new ArrayList<>(
+            List.of(
+                candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"),
+                candidate(Source.YOUTUBE, "Gone Are The Days", "Nujabes")));
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.6);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(
+                    new dev.chico.bot.parser.ParsedTrack(
+                        "raw", "Gone Are The Days", "Nujabes, Uyama Hiroto", 90.0)))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals("Gone Are The Days", result.get(0).title());
+  }
+
+  @Test
+  void textQueryIgnoresThreshold() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"));
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.9);
+
+    List<TrackCandidate> result =
+        resolver.resolve(new TextQuery("Sp.lral Nujabes")).get();
+
+    assertEquals(1, result.size());
+  }
 }
