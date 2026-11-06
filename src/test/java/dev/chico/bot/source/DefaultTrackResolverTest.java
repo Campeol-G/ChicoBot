@@ -27,10 +27,13 @@ class DefaultTrackResolverTest {
     private final Source source;
     final AtomicInteger searches = new AtomicInteger();
     final AtomicInteger urlLoads = new AtomicInteger();
+    volatile String lastSearch;
+    final java.util.Queue<List<TrackCandidate>> searchQueue = new java.util.ArrayDeque<>();
     volatile List<TrackCandidate> searchResult = List.of();
     volatile Throwable searchFailure;
     volatile boolean searchHangs;
     volatile List<TrackCandidate> urlResult = List.of();
+    volatile Throwable urlFailure;
 
     FakeLoader(Source source) {
       this.source = source;
@@ -44,6 +47,11 @@ class DefaultTrackResolverTest {
     @Override
     public CompletableFuture<List<TrackCandidate>> search(String prefixedQuery) {
       searches.incrementAndGet();
+      lastSearch = prefixedQuery;
+      List<TrackCandidate> queued = searchQueue.poll();
+      if (queued != null) {
+        return CompletableFuture.completedFuture(queued);
+      }
       if (searchHangs) {
         return new CompletableFuture<>();
       }
@@ -58,6 +66,11 @@ class DefaultTrackResolverTest {
     @Override
     public CompletableFuture<List<TrackCandidate>> loadUrl(URI uri) {
       urlLoads.incrementAndGet();
+      if (urlFailure != null) {
+        CompletableFuture<List<TrackCandidate>> failed = new CompletableFuture<>();
+        failed.completeExceptionally(urlFailure);
+        return failed;
+      }
       return CompletableFuture.completedFuture(urlResult);
     }
   }
@@ -218,5 +231,135 @@ class DefaultTrackResolverTest {
 
     assertEquals(2, result.size());
     assertEquals("Azul da Cor do Mar", result.get(0).title());
+  }
+
+  @Test
+  void scUrlEmptyFallsBackToSlugSearch() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlResult = List.of();
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Ludwig the Holy Blade", "Jachym Jurda"));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/jachym-jurda/ludwig-the-holy-blade")))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals("Ludwig the Holy Blade", result.get(0).title());
+    assertEquals(1, soundcloud.urlLoads.get());
+    assertEquals(1, youtube.searches.get());
+    assertTrue(youtube.lastSearch.startsWith("ytsearch:"));
+    assertTrue(youtube.lastSearch.contains("ludwig the holy blade"));
+  }
+
+  @Test
+  void scUrlFailureFallsBackToSlugSearch() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailure = new RuntimeException("boom");
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Ludwig the Holy Blade", "Jachym Jurda"));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 10);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/jachym-jurda/ludwig-the-holy-blade")))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals(1, youtube.searches.get());
+  }
+
+  @Test
+  void scUrlFallsBackToTitleSlugWhenFullSlugMisses() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailure = new RuntimeException("boom");
+    youtube.searchQueue.add(List.of());
+    youtube.searchQueue.add(
+        List.of(candidate(Source.YOUTUBE, "Ludwig the Holy Blade", "GeoffPlaysGuitar")));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 10);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/jachym-jurda/ludwig-the-holy-blade")))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals("Ludwig the Holy Blade", result.get(0).title());
+    assertEquals(2, youtube.searches.get());
+    assertTrue(youtube.lastSearch.startsWith("ytsearch:"));
+    assertTrue(!youtube.lastSearch.contains("jachym"));
+  }
+
+  @Test
+  void scUrlDirectHitDoesNotSearch() throws Exception {    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlResult =
+        List.of(candidate(Source.SOUNDCLOUD, "Direct", "Artist"));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/some-artist/some-track")))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals("Direct", result.get(0).title());
+    assertEquals(0, youtube.searches.get());
+    assertEquals(0, soundcloud.searches.get());
+  }
+
+  @Test
+  void scUrlWithoutUsableSlugStaysEmpty() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlResult = List.of();
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(Source.SOUNDCLOUD, URI.create("https://soundcloud.com/likes")))
+            .get();
+
+    assertTrue(result.isEmpty());
+    assertEquals(0, youtube.searches.get());
+    assertEquals(0, soundcloud.searches.get());
+  }
+
+  @Test
+  void ytUrlEmptyDoesNotSlugSearch() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.urlResult = List.of();
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result = resolver.resolve(new UrlQuery(Source.YOUTUBE, ANY_URI)).get();
+
+    assertTrue(result.isEmpty());
+    assertEquals(0, youtube.searches.get());
+    assertEquals(0, soundcloud.searches.get());
   }
 }

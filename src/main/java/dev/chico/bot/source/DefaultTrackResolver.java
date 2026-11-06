@@ -14,6 +14,29 @@ public final class DefaultTrackResolver implements TrackResolver {
   private static final String YOUTUBE_SEARCH = "ytsearch:";
   private static final String SOUNDCLOUD_SEARCH = "scsearch:";
 
+  /**
+   * URL path segments that carry no searchable text. Query strings never reach
+   * here ({@link URI#getPath} strips them), so link-only parameters need no
+   * special handling.
+   */
+  private static final java.util.Set<String> SLUG_STOP_SEGMENTS =
+      java.util.Set.of(
+          "sets",
+          "likes",
+          "tracks",
+          "albums",
+          "reposts",
+          "popular-tracks",
+          "followers",
+          "following",
+          "comments",
+          "recommended",
+          "stations",
+          "groups",
+          "people",
+          "watch",
+          "playlist");
+
   private final Map<Source, TrackLoader> loaders;
   private final Ranker ranker;
   private final CircuitBreaker breaker;
@@ -33,7 +56,7 @@ public final class DefaultTrackResolver implements TrackResolver {
   @Override
   public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
     if (query instanceof UrlQuery url) {
-      return resolveUrl(url).thenApply(this::firstOnly);
+      return resolveUrl(url);
     }
     String text =
         switch (query) {
@@ -50,16 +73,93 @@ public final class DefaultTrackResolver implements TrackResolver {
       return CompletableFuture.completedFuture(List.of());
     }
     return withTimeout(loader.loadUrl(query.uri()))
-        .thenApply(
+        .thenCompose(
             candidates -> {
               breaker.recordSuccess(query.source());
-              return candidates;
+              if (candidates.isEmpty()) {
+                return fallbackSearch(query);
+              }
+              return CompletableFuture.completedFuture(List.of(candidates.get(0)));
             })
-        .exceptionally(
+        .exceptionallyCompose(
             failure -> {
               breaker.recordFailure(query.source());
-              return List.of();
+              return fallbackSearch(query);
             });
+  }
+
+  /**
+   * Direct SoundCloud loads fail when Lavaplayer cannot play the track's
+   * formats. Searching the slug text (usually artist + title) still finds an
+   * equivalent, most often on YouTube. Only SoundCloud links fall back: direct
+   * YouTube loads either work or have no searchable slug.
+   */
+  private CompletableFuture<List<TrackCandidate>> fallbackSearch(UrlQuery query) {
+    if (query.source() != Source.SOUNDCLOUD) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+    java.util.Optional<String> full = slugText(query.uri());
+    java.util.Optional<String> titleOnly = titleSlug(query.uri());
+    CompletableFuture<List<TrackCandidate>> first =
+        full.map(this::searchRanked).orElseGet(() -> CompletableFuture.completedFuture(List.of()));
+    // The uploader segment often names an account, not the artist, and an
+    // over-specific query matches nothing. Retry with the title slug alone.
+    if (titleOnly.isPresent() && !titleOnly.equals(full)) {
+      String title = titleOnly.orElseThrow();
+      first = first.thenCompose(
+          candidates ->
+              candidates.isEmpty() ? searchRanked(title) : CompletableFuture.completedFuture(candidates));
+    }
+    return first;
+  }
+
+  private CompletableFuture<List<TrackCandidate>> searchRanked(String text) {
+    return resolveSearch(text).thenApply(candidates -> ranked(candidates, text));
+  }
+
+  static java.util.Optional<String> slugText(URI uri) {
+    List<String> words = slugWords(uri, false);
+    if (words.isEmpty()) {
+      return java.util.Optional.empty();
+    }
+    return java.util.Optional.of(String.join(" ", words));
+  }
+
+  static java.util.Optional<String> titleSlug(URI uri) {
+    List<String> words = slugWords(uri, true);
+    if (words.isEmpty()) {
+      return java.util.Optional.empty();
+    }
+    return java.util.Optional.of(String.join(" ", words));
+  }
+
+  private static List<String> slugWords(URI uri, boolean lastSegmentOnly) {
+    String path = uri.getPath();
+    if (path == null || path.isBlank()) {
+      return List.of();
+    }
+    List<String> segments = new java.util.ArrayList<>();
+    for (String segment : path.split("/")) {
+      String lowered = segment.toLowerCase(java.util.Locale.ROOT);
+      if (segment.isEmpty()
+          || SLUG_STOP_SEGMENTS.contains(lowered)
+          || lowered.startsWith("s-")) {
+        continue;
+      }
+      segments.add(segment);
+    }
+    if (lastSegmentOnly && !segments.isEmpty()) {
+      segments = segments.subList(segments.size() - 1, segments.size());
+    }
+    List<String> words = new java.util.ArrayList<>();
+    for (String segment : segments) {
+      for (String word : segment.split("[^A-Za-z0-9]+")) {
+        if (word.length() >= 2) {
+          words.add(word);
+        }
+      }
+    }
+    return words;
   }
 
   private CompletableFuture<List<TrackCandidate>> resolveSearch(String text) {
@@ -100,12 +200,5 @@ public final class DefaultTrackResolver implements TrackResolver {
     return candidates.stream()
         .sorted(Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text)).reversed())
         .toList();
-  }
-
-  private List<TrackCandidate> firstOnly(List<TrackCandidate> candidates) {
-    if (candidates.isEmpty()) {
-      return candidates;
-    }
-    return List.of(candidates.get(0));
   }
 }

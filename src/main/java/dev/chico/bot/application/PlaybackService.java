@@ -99,6 +99,17 @@ public final class PlaybackService {
     this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
   }
 
+  PlaybackService(
+      VoiceConnector connector, Config config, Clock clock, TrackResolver resolver) {
+    this.connector = connector;
+    this.clock = clock;
+    this.queueMax = config.queueMax();
+    this.playCooldownS = config.playCooldownS();
+    this.resolver = resolver;
+    this.metadata =
+        new MetadataLookup(ITUNES_LOOKUP, Duration.ofMillis(config.resolveTimeoutMs()));
+  }
+
   public AudioPlayerSendHandler sendHandler(long guildId) {
     return musicManager(guildId).sendHandler();
   }
@@ -139,7 +150,16 @@ public final class PlaybackService {
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
-      return playQuery(guildId, voiceChannelId, query);
+      return playQuery(guildId, voiceChannelId, query)
+          .thenApply(
+              result -> {
+                if (!result.queued() && accepted.source() == Source.SOUNDCLOUD) {
+                  return refused(
+                      "SoundCloud couldn't load that track. Try a YouTube link"
+                          + " or search for the track name.");
+                }
+                return result;
+              });
     }
     return metadata
         .artistTitle(query)
