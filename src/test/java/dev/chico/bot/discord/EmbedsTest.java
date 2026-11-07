@@ -44,4 +44,30 @@ class EmbedsTest {
 
     assertEquals("Nothing found. Try another name or link.", embed.getDescription());
   }
+
+  @Test
+  void emptyQueueRendersEmpty() {
+    var embed = Embeds.queue(List.of());
+
+    assertEquals("The queue is empty.", embed.getDescription());
+  }
+
+  @Test
+  void nowPlayingIncludesDurationAndSource() {
+    var embed = Embeds.nowPlaying(candidate("Never Gonna Give You Up", "Rick Astley", 225));
+
+    assertTrue(embed.getFooter().getText().contains("YouTube"), embed.getFooter().getText());
+    assertTrue(embed.getFooter().getText().contains("3:45"), embed.getFooter().getText());
+  }
+
+  @Test
+  void queueTruncatesAtThirty() {
+    java.util.ArrayList<TrackCandidate> many = new java.util.ArrayList<>();
+    for (int i = 1; i <= 35; i++) {
+      many.add(candidate("Track " + i, "artist", 200));
+    }
+    var embed = Embeds.queue(many);
+
+    assertTrue(embed.getDescription().contains("…and 5 more."), embed.getDescription());
+  }
 }
