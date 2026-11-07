@@ -47,7 +47,7 @@ class ImageDownloaderTest {
   }
 
   @Test
-  void redirectCanNeverBeFollowed() {
+  void offAllowlistRedirectTargetRejected() {
     // The client is built with followRedirects(NEVER) and only 2xx is
     // accepted, so any 3xx surfaces as DOWNLOAD_FAILED by construction.
     // Pinned at the policy level: a redirect target off the allowlist is
