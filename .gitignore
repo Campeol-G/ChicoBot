@@ -17,3 +17,6 @@ logs/
 .vscode/
 .DS_Store
 dependency-reduced-pom.xml
+
+# Manual test checklist (personal working notes, not tracked)
+docs/test-plan.md
