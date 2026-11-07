@@ -114,4 +114,32 @@ class LavaplayerTrackLoaderTest {
     assertEquals(1, direct.size());
     manager.shutdown();
   }
+
+  @Test
+  @Tag("integration")
+  void soundCloudSearchLoads() throws Exception {
+    // POR QUE: SoundCloud via Lavaplayer e instavel no upstream (a busca pode
+    // falhar com "Something went wrong when looking up the track" quando a API
+    // muda o formato). O teste sonda a saude da fonte: se o upstream responde,
+    // valida o formato; se nao, aborta documentando, sem quebrar a suite.
+    DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
+    manager.registerSourceManager(
+        com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager
+            .createDefault());
+    LavaplayerTrackLoader loader =
+        new LavaplayerTrackLoader(Source.SOUNDCLOUD, manager, 5, Duration.ofSeconds(15));
+
+    List<TrackCandidate> results;
+    try {
+      results = loader.search("scsearch:Tim Maia Azul da Cor do Mar").get();
+    } catch (java.util.concurrent.ExecutionException e) {
+      org.junit.jupiter.api.Assumptions.abort(
+          "SoundCloud upstream unavailable: " + e.getCause());
+      return;
+    } finally {
+      manager.shutdown();
+    }
+    assertTrue(results.size() >= 1 && results.size() <= 5);
+    assertTrue(results.get(0).track() != null);
+  }
 }
