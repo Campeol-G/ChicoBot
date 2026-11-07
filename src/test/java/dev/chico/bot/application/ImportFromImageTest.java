@@ -148,4 +148,99 @@ class ImportFromImageTest {
       assertTrue(e.getCause() instanceof ImportFromImage.ImportException);
     }
   }
+
+  static final class ThrowingDownloader extends ImageDownloader {
+    private final ImportFromImage.ImportException failure;
+
+    ThrowingDownloader(ImportFromImage.ImportException failure) {
+      super(8_388_608L);
+      this.failure = failure;
+    }
+
+    @Override
+    public byte[] download(AttachmentInput in) throws ImportFromImage.ImportException {
+      throw failure;
+    }
+  }
+
+  static final class ThrowingOcr implements OcrEngine {
+    private final dev.chico.bot.ocr.OcrException failure;
+
+    ThrowingOcr(dev.chico.bot.ocr.OcrException failure) {
+      this.failure = failure;
+    }
+
+    @Override
+    public OcrResult read(byte[] png) throws dev.chico.bot.ocr.OcrException {
+      throw failure;
+    }
+  }
+
+  private static ImportFromImage.Reason reasonOf(CompletionException e) {
+    assertTrue(e.getCause() instanceof ImportFromImage.ImportException);
+    return ((ImportFromImage.ImportException) e.getCause()).reason();
+  }
+
+  @Test
+  void noImagesThrowsNoImages() {
+    var ocr = new FakeOcr(List.of());
+    try {
+      flow(new FakeDownloader(new byte[0]), ocr).run(7L, 9L, List.of()).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.NO_IMAGES, reasonOf(e));
+    }
+  }
+
+  @Test
+  void downloadFailurePropagatesTyped() throws Exception {
+    var ocr = new FakeOcr(List.of());
+    var downloader =
+        new ThrowingDownloader(
+            new ImportFromImage.ImportException(
+                ImportFromImage.Reason.DOWNLOAD_FAILED, "Could not download the image."));
+    try {
+      flow(downloader, ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.DOWNLOAD_FAILED, reasonOf(e));
+    }
+  }
+
+  @Test
+  void ocrFailurePropagatesTyped() throws Exception {
+    byte[] png = tinyPng();
+    var ocr = new ThrowingOcr(new dev.chico.bot.ocr.OcrException("timeout"));
+    try {
+      flow(new FakeDownloader(png), ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.OCR_FAILED, reasonOf(e));
+    }
+  }
+
+  @Test
+  void imageRejectedPropagatesTyped() throws Exception {
+    // 16x16 GIF magic: declared PNG passes the reported check, real bytes fail it.
+    byte[] gif = new byte[] {'G', 'I', 'F', '8', '9', 'a', 16, 0, 16, 0, 0, 0, 0, 0};
+    var ocr = new FakeOcr(List.of());
+    try {
+      flow(new FakeDownloader(gif), ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.IMAGE_REJECTED, reasonOf(e));
+    }
+  }
+
+  @Test
+  void noTracksThrowsNoTracks() throws Exception {
+    byte[] png = tinyPng();
+    var ocr = new FakeOcr(List.of(new OcrResult(List.of(), Duration.ofMillis(10))));
+    try {
+      flow(new FakeDownloader(png), ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.NO_TRACKS, reasonOf(e));
+    }
+  }
 }
