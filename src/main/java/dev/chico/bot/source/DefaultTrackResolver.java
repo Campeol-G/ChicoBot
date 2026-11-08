@@ -11,6 +11,9 @@ import java.util.concurrent.TimeUnit;
 /** YouTube first with SoundCloud fallback, degraded sources skipped. */
 public final class DefaultTrackResolver implements TrackResolver {
 
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(DefaultTrackResolver.class);
+
   private static final String YOUTUBE_SEARCH = "ytsearch:";
   private static final String SOUNDCLOUD_SEARCH = "scsearch:";
 
@@ -123,6 +126,7 @@ public final class DefaultTrackResolver implements TrackResolver {
     }
     java.util.Optional<String> full = slugText(query.uri());
     java.util.Optional<String> titleOnly = titleSlug(query.uri());
+    log.debug("sc-fallback slug={} titleSlug={} uri={}", full, titleOnly, query.uri());
     CompletableFuture<List<TrackCandidate>> first =
         full.map(this::searchRanked).orElseGet(() -> CompletableFuture.completedFuture(List.of()));
     // The uploader segment often names an account, not the artist, and an
@@ -221,7 +225,11 @@ public final class DefaultTrackResolver implements TrackResolver {
 
   private List<TrackCandidate> ranked(List<TrackCandidate> candidates, String text) {
     return candidates.stream()
-        .sorted(Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text)).reversed())
+        .sorted(
+            Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text))
+                .reversed()
+                .thenComparing(
+                    c -> c.duration() == null ? Long.MAX_VALUE : c.duration().getSeconds()))
         .toList();
   }
 }

@@ -23,6 +23,12 @@ class DefaultTrackResolverTest {
         source, title, artist, Duration.ofSeconds(200), ANY_URI, 0.0, null);
   }
 
+  private static TrackCandidate candidateWithDuration(
+      Source source, String title, String artist, long seconds) {
+    return new TrackCandidate(
+        source, title, artist, Duration.ofSeconds(seconds), ANY_URI, 0.0, null);
+  }
+
   private static final class FakeLoader implements TrackLoader {
     private final Source source;
     final AtomicInteger searches = new AtomicInteger();
@@ -429,5 +435,35 @@ class DefaultTrackResolverTest {
         resolver.resolve(new TextQuery("Sp.lral Nujabes")).get();
 
     assertEquals(1, result.size());
+  }
+
+  @Test
+  void scFallbackPrefersShorterWhenTextTies() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailure = new RuntimeException("boom");
+    youtube.searchResult =
+        new ArrayList<>(
+            List.of(
+                candidateWithDuration(
+                    Source.YOUTUBE,
+                    "Brasilian Skies",
+                    "Masayoshi Takanaka",
+                    11 * 60 + 55),
+                candidateWithDuration(
+                    Source.YOUTUBE, "Brasilian Skies", "Masayoshi Takanaka", 6 * 60 + 5)));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 10);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/wild-eagle/brasilian-skies-live-2004")))
+            .get();
+
+    assertEquals(2, result.size());
+    assertEquals(6 * 60 + 5, result.get(0).duration().getSeconds());
   }
 }
