@@ -2,6 +2,7 @@ package dev.chico.bot.discord;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.chico.bot.source.Source;
@@ -58,6 +59,31 @@ class EmbedsTest {
 
     assertTrue(embed.getFooter().getText().contains("YouTube"), embed.getFooter().getText());
     assertTrue(embed.getFooter().getText().contains("3:45"), embed.getFooter().getText());
+  }
+
+  @Test
+  void nowPlayingShowsSourceThumbnail() {
+    var youtube = Embeds.nowPlaying(candidate("Get You", "Daniel Caesar", 279));
+
+    assertNotNull(youtube.getThumbnail());
+    assertTrue(youtube.getFooter().getText().contains("YouTube"));
+  }
+
+  @Test
+  void nowPlayingShowsSoundCloudThumbnail() {
+    var soundcloud =
+        Embeds.nowPlaying(
+            new TrackCandidate(
+                Source.SOUNDCLOUD,
+                "Quixotic",
+                "ewyx",
+                Duration.ofSeconds(185),
+                URI.create("https://soundcloud.com/artist/track"),
+                0.0,
+                null));
+
+    assertNotNull(soundcloud.getThumbnail());
+    assertTrue(soundcloud.getFooter().getText().contains("SoundCloud"));
   }
 
   @Test

@@ -28,6 +28,7 @@ public final class Embeds {
     builder.setAuthor(TextSanitizer.escape(candidate.artist()));
     builder.setFooter(sourceName(candidate.source()) + " • " + format(candidate.duration()));
     builder.setColor(Color.GREEN);
+    setThumbnail(builder, candidate);
     return builder.build();
   }
 
@@ -112,6 +113,31 @@ public final class Embeds {
       case SOUNDCLOUD -> "SoundCloud";
       case SPOTIFY -> "Spotify";
       case APPLE_MUSIC -> "Apple Music";
+    };
+  }
+
+  private static void setThumbnail(EmbedBuilder builder, TrackCandidate candidate) {
+    try {
+      if (candidate.track() != null && candidate.track().getInfo().artworkUrl != null) {
+        builder.setThumbnail(candidate.track().getInfo().artworkUrl);
+        return;
+      }
+    } catch (RuntimeException ignored) {
+      // Keep the static fallback below.
+    }
+    try {
+      builder.setThumbnail(sourceIcon(candidate.source()));
+    } catch (RuntimeException ignored) {
+      // Thumbnail is best-effort; the embed stays usable without it.
+    }
+  }
+
+  private static String sourceIcon(Source source) {
+    return switch (source) {
+      case YOUTUBE -> "https://www.youtube.com/favicon.ico";
+      case SOUNDCLOUD -> "https://soundcloud.com/favicon.ico";
+      case SPOTIFY -> "https://open.spotify.com/favicon.ico";
+      case APPLE_MUSIC -> "https://music.apple.com/favicon.ico";
     };
   }
 
