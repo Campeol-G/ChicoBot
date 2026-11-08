@@ -71,10 +71,32 @@ public final class Bot {
       if (guild != null) {
         MusicCommands.register(guild);
         ImageContextMenu.register(guild);
+        jda.retrieveCommands()
+            .queue(
+                globals ->
+                    globals.stream()
+                        .filter(command -> isManaged(command.getName()))
+                        .forEach(command -> command.delete().queue()));
         return;
       }
     }
     MusicCommands.registerGlobal(jda);
     ImageContextMenu.registerGlobal(jda);
+  }
+
+  private static boolean isManaged(String name) {
+    return java.util.Set.of(
+            MusicCommands.PLAY,
+            MusicCommands.PAUSE,
+            MusicCommands.RESUME,
+            MusicCommands.SKIP,
+            MusicCommands.STOP,
+            MusicCommands.QUEUE,
+            MusicCommands.REMOVE,
+            MusicCommands.LEAVE,
+            MusicCommands.NOW_PLAYING,
+            ImageContextMenu.COMMAND,
+            "ping")
+        .contains(name);
   }
 }
