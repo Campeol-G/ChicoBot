@@ -169,6 +169,21 @@ class TrackUrlPolicyTest {
   }
 
   @Test
+  void spotifyLocalePrefixAcceptedAsMetadataSource() {
+    assertAccepted(
+        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI", Source.SPOTIFY);
+    assertAccepted(
+        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI?si=abc", Source.SPOTIFY);
+  }
+
+  @Test
+  void spotifyLocalePrefixCollectionsRejectedAsPlaylist() {
+    assertRejected(
+        "https://open.spotify.com/intl-pt/album/1MgcKezYb874hGsZgYYAdV?si=x",
+        UrlDecision.Reason.PLAYLIST);
+  }
+
+  @Test
   void spotifyShortLinkAcceptedAsMetadataSource() {
     assertAccepted("https://spotify.link/abc123", Source.SPOTIFY);
   }

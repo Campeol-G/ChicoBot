@@ -161,6 +161,9 @@ public final class TrackUrlPolicy {
 
   private static UrlDecision spotify(URI uri) {
     List<String> segments = pathSegments(uri.getPath());
+    if (!segments.isEmpty() && isLocalePrefix(segments.get(0))) {
+      segments = segments.subList(1, segments.size());
+    }
     if (segments.size() < 2 || segments.get(1).isEmpty()) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
@@ -169,6 +172,11 @@ public final class TrackUrlPolicy {
       case "album", "playlist", "show" -> rejected(UrlDecision.Reason.PLAYLIST);
       default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     };
+  }
+
+  private static boolean isLocalePrefix(String segment) {
+    String lowered = segment.toLowerCase(java.util.Locale.ROOT);
+    return lowered.matches("intl-[a-z]{2}(-.*)?") || lowered.matches("[a-z]{2}(-[a-z]{2})?");
   }
 
   private static UrlDecision spotifyShort(URI uri) {
