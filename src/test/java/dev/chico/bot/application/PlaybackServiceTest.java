@@ -288,6 +288,22 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void soundcloudSetRefusalOmitsYoutubeHint() {
+    PlaybackService.PlayResult youtube =
+        service()
+            .play(1L, 2L, 3L, "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLx")
+            .join();
+    PlaybackService.PlayResult soundcloud =
+        service()
+            .play(1L, 2L, 3L, "https://soundcloud.com/artist/sets/name")
+            .join();
+
+    assertTrue(youtube.message().contains("&list="));
+    assertTrue(soundcloud.message().contains("Playlists are not supported"));
+    assertTrue(!soundcloud.message().contains("&list="));
+  }
+
+  @Test
   void playPlaylistUrlRefusesWithHint() {
     PlaybackService.PlayResult result =
         service()

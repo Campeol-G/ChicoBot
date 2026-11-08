@@ -145,7 +145,7 @@ public final class PlaybackService {
       if (rejected.reason() == UrlDecision.Reason.INVALID) {
         return playQuery(guildId, voiceChannelId, new TextQuery(input));
       }
-      return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason())));
+      return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
@@ -353,7 +353,10 @@ public final class PlaybackService {
     return new PlayResult(false, message, null);
   }
 
-  private static String refusalMessage(UrlDecision.Reason reason) {
+  private static String refusalMessage(UrlDecision.Reason reason, String input) {
+    if (reason == UrlDecision.Reason.PLAYLIST && isSoundCloudInput(input)) {
+      return "Playlists are not supported yet. Send a link to a single SoundCloud track.";
+    }
     return switch (reason) {
       case PLAYLIST ->
           "Playlists are not supported yet. Send a link to a single track"
@@ -364,6 +367,11 @@ public final class PlaybackService {
       case UNSUPPORTED_LINK -> "That link is not supported.";
       case INVALID -> throw new IllegalStateException("unreachable");
     };
+  }
+
+  private static boolean isSoundCloudInput(String input) {
+    String lowered = input.strip().toLowerCase(java.util.Locale.ROOT);
+    return lowered.contains("soundcloud.com");
   }
 
   private static YoutubeAudioSourceManager createYoutubeSource(Config config) {
