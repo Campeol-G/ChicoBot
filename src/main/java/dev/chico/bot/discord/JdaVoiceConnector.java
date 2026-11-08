@@ -30,6 +30,14 @@ public final class JdaVoiceConnector implements VoiceConnector {
     if (channel == null) {
       return;
     }
+    if (!guild
+        .getSelfMember()
+        .hasPermission(
+            channel,
+            net.dv8tion.jda.api.Permission.VOICE_CONNECT,
+            net.dv8tion.jda.api.Permission.VOICE_SPEAK)) {
+      return;
+    }
     AudioManager audio = guild.getAudioManager();
     audio.setSendingHandler(handlerProvider.apply(guildId));
     audio.openAudioConnection(channel);

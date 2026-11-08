@@ -109,6 +109,14 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("Join a voice channel first.").setEphemeral(true).queue();
       return;
     }
+    var self = event.getGuild().getSelfMember();
+    if (!self.hasPermission(
+        channel,
+        net.dv8tion.jda.api.Permission.VOICE_CONNECT,
+        net.dv8tion.jda.api.Permission.VOICE_SPEAK)) {
+      event.reply("I don't have permission to join that voice channel.").setEphemeral(true).queue();
+      return;
+    }
     event.deferReply().queue();
     long guildId = event.getGuild().getIdLong();
     long userId = event.getMember().getIdLong();
