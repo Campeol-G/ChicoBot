@@ -82,6 +82,15 @@ public final class Bot {
     }
     MusicCommands.registerGlobal(jda);
     ImageContextMenu.registerGlobal(jda);
+    for (Guild guild : jda.getGuilds()) {
+      guild
+          .retrieveCommands()
+          .queue(
+              commands ->
+                  commands.stream()
+                      .filter(command -> isManaged(command.getName()))
+                      .forEach(command -> command.delete().queue()));
+    }
   }
 
   private static boolean isManaged(String name) {
