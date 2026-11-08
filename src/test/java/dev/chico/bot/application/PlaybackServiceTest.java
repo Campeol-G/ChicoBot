@@ -379,7 +379,45 @@ class PlaybackServiceTest {
   }
 
   @Test
-  void removeByNumberReportsTitle() {
+  void removeByDisplayNumberRemovesShownPosition() {
+    SilentVoice voice = new SilentVoice();
+    PlaybackService service =
+        serviceWith(
+            voice,
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("Alpha"))));
+    service.play(1L, 2L, 3L, "alpha").join();
+    service.enqueueResolved(
+        1L, List.of(candidate("Beta"), candidate("Gamma"), candidate("Delta")));
+
+    String message = service.remove(1L, "3");
+
+    assertEquals("Removed Gamma (position 3).", message);
+    assertEquals(
+        List.of("Beta", "Delta"),
+        service.queueView(1L).queued().stream().map(TrackCandidate::title).toList());
+  }
+
+  @Test
+  void skipByDisplayNumberPlaysShownPosition() {
+    SilentVoice voice = new SilentVoice();
+    PlaybackService service =
+        serviceWith(
+            voice,
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("Alpha"))));
+    service.play(1L, 2L, 3L, "alpha").join();
+    service.enqueueResolved(
+        1L, List.of(candidate("Beta"), candidate("Gamma"), candidate("Delta")));
+
+    assertEquals("Skipped.", service.skip(1L, java.util.Optional.of("3")));
+    assertEquals("Gamma", service.queueView(1L).current().orElseThrow().title());
+  }
+
+  @Test
+  void removeCurrentDisplayNumberRefuses() {
     SilentVoice voice = new SilentVoice();
     PlaybackService service =
         serviceWith(
@@ -392,8 +430,28 @@ class PlaybackServiceTest {
 
     String message = service.remove(1L, "1");
 
+    assertTrue(message.contains("current"));
+    assertEquals("Alpha", service.queueView(1L).current().orElseThrow().title());
+    assertEquals(1, service.queueView(1L).queued().size());
+  }
+
+  @Test
+  void removeByNumberReportsTitle() {
+    SilentVoice voice = new SilentVoice();
+    PlaybackService service =
+        serviceWith(
+            voice,
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("Alpha"))));
+    service.play(1L, 2L, 3L, "alpha").join();
+    service.enqueueResolved(1L, List.of(candidate("Beta")));
+
+    String message = service.remove(1L, "2");
+
     assertTrue(message.contains("Removed"));
     assertTrue(message.contains("Beta"));
+    assertTrue(message.contains("2"));
   }
 
   @Test

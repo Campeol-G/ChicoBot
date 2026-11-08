@@ -210,6 +210,15 @@ public final class PlaybackService {
       music.scheduler().nextTrack();
       return "Skipped.";
     }
+    String trimmed = target.orElseThrow().strip();
+    try {
+      if (Integer.parseInt(trimmed) == 1) {
+        music.scheduler().nextTrack();
+        return "Skipped.";
+      }
+    } catch (NumberFormatException notANumber) {
+      // Fall through to name lookup.
+    }
     Optional<Integer> index = findQueued(music, target.orElseThrow());
     if (index.isEmpty()) {
       return "No queued track matches that.";
@@ -226,6 +235,14 @@ public final class PlaybackService {
     if (music == null) {
       return "The queue is empty.";
     }
+    String trimmed = target.strip();
+    try {
+      if (Integer.parseInt(trimmed) == 1) {
+        return "Cannot remove the current track. Use /skip to skip it.";
+      }
+    } catch (NumberFormatException notANumber) {
+      // Fall through to name lookup.
+    }
     Optional<Integer> index = findQueued(music, target);
     if (index.isEmpty()) {
       return "No queued track matches that.";
@@ -233,7 +250,16 @@ public final class PlaybackService {
     List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
     TrackCandidate removed = queued.get(index.orElseThrow() - 1);
     music.scheduler().queueView().removeAt(index.orElseThrow() - 1);
-    return "Removed " + removed.title() + ".";
+    int displayPosition = index.orElseThrow() + 1;
+    try {
+      int typed = Integer.parseInt(trimmed);
+      if (typed >= 2 && typed <= queued.size() + 1) {
+        displayPosition = typed;
+      }
+    } catch (NumberFormatException notANumber) {
+      // Name match keeps index+1.
+    }
+    return "Removed " + removed.title() + " (position " + displayPosition + ").";
   }
 
   public QueueView queueView(long guildId) {
@@ -267,8 +293,11 @@ public final class PlaybackService {
     List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
     try {
       int number = Integer.parseInt(trimmed);
-      if (number >= 1 && number <= queued.size()) {
-        return Optional.of(number);
+      if (number == 1) {
+        return Optional.empty();
+      }
+      if (number >= 2 && number <= queued.size() + 1) {
+        return Optional.of(number - 1);
       }
       return Optional.empty();
     } catch (NumberFormatException notANumber) {
