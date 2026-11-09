@@ -112,8 +112,16 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("Only the importer can do that.").setEphemeral(true).queue();
       return;
     }
+    List<Integer> removed =
+        parseRemoveIndices(event.getValues(), session.orElseThrow().tracks().size());
+    if (removed.isEmpty() && !event.getValues().isEmpty()) {
+      event
+          .reply("Those items are no longer available.")
+          .setEphemeral(true)
+          .queue(null, err -> log.warn("remove reply failed", err));
+      return;
+    }
     event.deferEdit().queue();
-    List<Integer> removed = parseRemoveIndices(event.getValues(), session.orElseThrow().tracks().size());
     List<ParsedTrack> remaining = new ArrayList<>(session.orElseThrow().tracks());
     for (int i = removed.size() - 1; i >= 0; i--) {
       int index = removed.get(i);

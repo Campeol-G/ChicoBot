@@ -102,22 +102,22 @@ public final class MusicCommands extends ListenerAdapter {
 
   private void onPlay(SlashCommandInteractionEvent event) {
     if (event.getGuild() == null) {
-      event.reply("This only works in a server.").setEphemeral(true).queue();
+      event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     if (event.getMember() == null) {
-      event.reply("Could not resolve your member. Try again.").setEphemeral(true).queue();
+      event.reply("Could not resolve your member. Try again.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     OptionMapping option = event.getOption("query");
     if (option == null) {
-      event.reply("Tell me what to play: `/play <song name or link>`.").setEphemeral(true).queue();
+      event.reply("Tell me what to play: `/play <song name or link>`.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     var voiceState = event.getMember().getVoiceState();
     AudioChannelUnion channel = voiceState != null ? voiceState.getChannel() : null;
     if (channel == null) {
-      event.reply("Join a voice channel first.").setEphemeral(true).queue();
+      event.reply("Join a voice channel first.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     var self = event.getGuild().getSelfMember();
@@ -125,7 +125,7 @@ public final class MusicCommands extends ListenerAdapter {
         channel,
         net.dv8tion.jda.api.Permission.VOICE_CONNECT,
         net.dv8tion.jda.api.Permission.VOICE_SPEAK)) {
-      event.reply("I don't have permission to join that voice channel.").setEphemeral(true).queue();
+      event.reply("I don't have permission to join that voice channel.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
@@ -168,7 +168,7 @@ public final class MusicCommands extends ListenerAdapter {
 
   private void onQueue(SlashCommandInteractionEvent event) {
     if (event.getGuild() == null) {
-      event.reply("This only works in a server.").setEphemeral(true).queue();
+      event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
@@ -187,7 +187,7 @@ public final class MusicCommands extends ListenerAdapter {
 
   private void onNowPlaying(SlashCommandInteractionEvent event) {
     if (event.getGuild() == null) {
-      event.reply("This only works in a server.").setEphemeral(true).queue();
+      event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
@@ -203,14 +203,14 @@ public final class MusicCommands extends ListenerAdapter {
 
   private void reply(SlashCommandInteractionEvent event, String message) {
     if (event.getMember() == null || event.getGuild() == null) {
-      event.reply("This only works in a server.").setEphemeral(true).queue();
+      event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
     if (isConnectedElsewhere(event)) {
-      event.reply("Join my voice channel to control playback.").setEphemeral(true).queue();
+      event.reply("Join my voice channel to control playback.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
-    event.reply(message).queue();
+    event.reply(message).queue(null, err -> log.warn("reply failed", err));
   }
 
   private boolean inSameChannel(SlashCommandInteractionEvent event) {
@@ -218,7 +218,7 @@ public final class MusicCommands extends ListenerAdapter {
       return false;
     }
     if (isConnectedElsewhere(event)) {
-      event.reply("Join my voice channel to control playback.").setEphemeral(true).queue();
+      event.reply("Join my voice channel to control playback.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return false;
     }
     return true;
