@@ -7,6 +7,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 
 class CircuitBreakerTest {
@@ -84,5 +89,27 @@ class CircuitBreakerTest {
 
     assertTrue(breaker.isOpen(Source.YOUTUBE));
     assertFalse(breaker.isOpen(Source.SOUNDCLOUD));
+  }
+
+  @Test
+  void concurrentFailuresTripExactlyAtThreshold() throws Exception {
+    CircuitBreaker breaker = new CircuitBreaker(4000, Duration.ofMinutes(5), Clock.systemUTC());
+    ExecutorService pool = Executors.newFixedThreadPool(8);
+    List<Future<?>> done = new ArrayList<>();
+    for (int i = 0; i < 8; i++) {
+      done.add(
+          pool.submit(
+              () -> {
+                for (int j = 0; j < 500; j++) {
+                  breaker.recordFailure(Source.YOUTUBE);
+                }
+                return null;
+              }));
+    }
+    for (Future<?> f : done) {
+      f.get();
+    }
+    pool.shutdown();
+    assertTrue(breaker.isOpen(Source.YOUTUBE));
   }
 }
