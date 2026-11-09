@@ -274,7 +274,9 @@ public final class PreviewButtons extends ListenerAdapter {
                   resolveSlots.acquire();
                   try {
                     List<TrackCandidate> candidates =
-                        playback.resolve(new OcrQuery(tracks.get(index))).get();
+                        playback
+                            .resolve(new OcrQuery(tracks.get(index)))
+                            .get(resolveTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                     if (!candidates.isEmpty()) {
                       TrackCandidate best = candidates.get(0);
                       found.put(index, best);
