@@ -19,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.dv8tion.jda.api.components.actionrow.ActionRow;
 import net.dv8tion.jda.api.components.buttons.Button;
@@ -34,6 +36,8 @@ import net.dv8tion.jda.api.utils.messages.MessageEditData;
 
 /** "Play all", "Remove items" and "Cancel" for import previews. Owner-only. */
 public final class PreviewButtons extends ListenerAdapter {
+
+  private static final Logger log = LoggerFactory.getLogger(PreviewButtons.class);
 
   static final String PLAY_PREFIX = "import-play:";
   static final String CANCEL_PREFIX = "import-cancel:";
@@ -156,27 +160,69 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("This import is already being queued.").setEphemeral(true).queue();
       return;
     }
-    if (event.getMember() == null || event.getGuild() == null) {
+    if (event.getGuild() == null) {
       inFlight.remove(sessionId);
+      event.reply("This only works in a server.").setEphemeral(true).queue();
       return;
     }
-    AudioChannelUnion channel = event.getMember().getVoiceState().getChannel();
+    // Member may not be cached without the privileged GUILD_MEMBERS intent,
+    // so resolve it from the guild (REST) when needed.
+    net.dv8tion.jda.api.entities.Member member = event.getMember();
+    if (member == null) {
+      try {
+        member = event.getGuild().retrieveMemberById(event.getUser().getId()).complete();
+      } catch (Exception e) {
+        log.warn("Could not resolve member for Play all", e);
+      }
+    }
+    if (member == null) {
+      inFlight.remove(sessionId);
+      event.reply("Could not resolve your member. Try again.").setEphemeral(true).queue();
+      return;
+    }
+    AudioChannelUnion channel = member.getVoiceState() != null ? member.getVoiceState().getChannel() : null;
+    if (channel == null) {
+      for (net.dv8tion.jda.api.entities.GuildVoiceState vs : event.getGuild().getVoiceStates()) {
+        if (vs.getMember() != null && vs.getMember().getIdLong() == event.getUser().getIdLong()) {
+          channel = vs.getChannel();
+          break;
+        }
+      }
+    }
+    if (channel == null) {
+      try {
+        net.dv8tion.jda.api.entities.GuildVoiceState vs =
+            event.getGuild().retrieveMemberVoiceStateById(event.getUser().getIdLong()).complete();
+        channel = vs != null ? vs.getChannel() : null;
+      } catch (Exception e) {
+        log.warn("Could not retrieve voice state", e);
+      }
+    }
     if (channel == null) {
       inFlight.remove(sessionId);
       event.reply("Join a voice channel first.").setEphemeral(true).queue();
       return;
     }
+    final AudioChannelUnion voiceChannel = channel;
     List<ParsedTrack> tracks = session.orElseThrow().tracks();
     // Take the session out now: a second click, Remove or Cancel during the
     // resolve reports back instead of acting twice on the same batch.
     sessions.remove(sessionId);
     long guildId = event.getGuild().getIdLong();
-    event.deferEdit().queue();
-    event
-        .getHook()
-        .editOriginal(
-            new MessageEditBuilder().setContent("Resolving 0/" + tracks.size() + "…").build())
-        .queue();
+    try {
+      event.deferEdit().queue();
+    } catch (Exception e) {
+      log.warn("deferEdit failed", e);
+    }
+    try {
+      event
+          .getHook()
+          .editOriginal(
+              new MessageEditBuilder().setContent("Resolving 0/" + tracks.size() + "…").build())
+          .queue();
+    } catch (Exception e) {
+      log.warn("initial edit failed", e);
+    }
 
     ConcurrentHashMap<Integer, TrackCandidate> found = new ConcurrentHashMap<>();
     AtomicInteger done = new AtomicInteger();
@@ -206,14 +252,18 @@ public final class PreviewButtons extends ListenerAdapter {
                     if (Duration.between(lastEdit[0], Instant.now()).toMillis() >= 2000
                         && finished < tracks.size()) {
                       lastEdit[0] = Instant.now();
-                      event
-                          .getHook()
-                          .editOriginal(
-                              new MessageEditBuilder()
-                                  .setContent("Resolving " + finished + "/" + tracks.size()
-                                      + "…")
-                                  .build())
-                          .queue();
+                      try {
+                        event
+                            .getHook()
+                            .editOriginal(
+                                new MessageEditBuilder()
+                                    .setContent("Resolving " + finished + "/" + tracks.size()
+                                        + "…")
+                                    .build())
+                            .queue();
+                      } catch (Exception e) {
+                        log.warn("progress edit failed", e);
+                      }
                     }
                   }
                 }
@@ -226,6 +276,9 @@ public final class PreviewButtons extends ListenerAdapter {
         .whenComplete(
             (ignored, failure) -> {
               inFlight.remove(sessionId);
+              if (failure != null) {
+                log.warn("Play all resolve failed", failure);
+              }
               List<TrackCandidate> ordered = new ArrayList<>();
               for (int i = 0; i < tracks.size(); i++) {
                 TrackCandidate candidate = found.get(i);
@@ -235,9 +288,13 @@ public final class PreviewButtons extends ListenerAdapter {
               }
               int notFound = tracks.size() - ordered.size();
               int enqueued = 0;
-              if (!ordered.isEmpty()) {
-                playback.connect(guildId, channel.getIdLong());
-                enqueued = playback.enqueueResolved(guildId, ordered);
+              try {
+                if (!ordered.isEmpty()) {
+                  playback.connect(guildId, voiceChannel.getIdLong());
+                  enqueued = playback.enqueueResolved(guildId, ordered);
+                }
+              } catch (Exception e) {
+                log.warn("Play all enqueue failed", e);
               }
               int didNotFit = ordered.size() - enqueued;
               String report = "Enqueued " + enqueued + ".";
@@ -247,8 +304,15 @@ public final class PreviewButtons extends ListenerAdapter {
               if (didNotFit > 0) {
                 report += " " + didNotFit + " did not fit in the queue.";
               }
-              event.getHook().editOriginal(new MessageEditBuilder().setContent(report).build())
-                  .queue();
+              if (failure != null && ordered.isEmpty()) {
+                report = "Import failed: could not resolve any track. Try again.";
+              }
+              try {
+                event.getHook().editOriginal(new MessageEditBuilder().setContent(report).build())
+                    .queue();
+              } catch (Exception e) {
+                log.warn("final edit failed", e);
+              }
             });
   }
 
