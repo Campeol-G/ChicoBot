@@ -113,8 +113,7 @@ public final class PreviewButtons extends ListenerAdapter {
       return;
     }
     event.deferEdit().queue();
-    List<Integer> removed =
-        event.getValues().stream().map(Integer::parseInt).sorted().toList();
+    List<Integer> removed = parseRemoveIndices(event.getValues(), session.orElseThrow().tracks().size());
     List<ParsedTrack> remaining = new ArrayList<>(session.orElseThrow().tracks());
     for (int i = removed.size() - 1; i >= 0; i--) {
       int index = removed.get(i);
@@ -389,10 +388,27 @@ public final class PreviewButtons extends ListenerAdapter {
         ActionRow.of(removeMenu(sessionId, tracks)));
   }
 
+  /** Parses remove-menu values, ignoring forged, duplicate and out-of-range ones. */
+  static List<Integer> parseRemoveIndices(List<String> values, int size) {
+    java.util.Set<Integer> parsed = new java.util.TreeSet<>();
+    for (String value : values) {
+      try {
+        int index = Integer.parseInt(value);
+        if (index >= 0 && index < size) {
+          parsed.add(index);
+        }
+      } catch (NumberFormatException ignored) {
+        // Forged client value: skip it.
+      }
+    }
+    return List.copyOf(parsed);
+  }
+
   private static StringSelectMenu removeMenu(UUID sessionId, List<ParsedTrack> tracks) {
     StringSelectMenu.Builder menu =
         StringSelectMenu.create(REMOVE_PREFIX + sessionId).setPlaceholder("Remove items");
-    for (int i = 0; i < tracks.size(); i++) {
+    int shown = Math.min(tracks.size(), 25);
+    for (int i = 0; i < shown; i++) {
       ParsedTrack track = tracks.get(i);
       String label = (i + 1) + ". " + track.title()
           + (track.artist().isEmpty() ? "" : " - " + track.artist());
@@ -402,7 +418,7 @@ public final class PreviewButtons extends ListenerAdapter {
       menu.addOption(label, String.valueOf(i));
     }
     menu.setMinValues(1);
-    menu.setMaxValues(tracks.size());
+    menu.setMaxValues(Math.max(shown, 1));
     return menu.build();
   }
 
