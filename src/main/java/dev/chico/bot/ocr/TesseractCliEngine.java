@@ -47,7 +47,7 @@ public final class TesseractCliEngine implements OcrEngine {
       stdin.write(png);
       stdin.flush();
     } catch (IOException e) {
-      process.destroyForcibly();
+      shutdownAndJoin(process, stdoutReader, stderrReader);
       throw new OcrException("Cannot feed image to tesseract", e);
     }
     boolean finished;
@@ -55,15 +55,15 @@ public final class TesseractCliEngine implements OcrEngine {
       finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      process.destroyForcibly();
+      shutdownAndJoin(process, stdoutReader, stderrReader);
       throw new OcrException("Interrupted while waiting for tesseract", e);
+    }
+    if (!finished) {
+      shutdownAndJoin(process, stdoutReader, stderrReader);
+      throw new OcrException("Tesseract timed out");
     }
     join(stdoutReader);
     join(stderrReader);
-    if (!finished) {
-      process.destroyForcibly();
-      throw new OcrException("Tesseract timed out");
-    }
     if (process.exitValue() != 0) {
       throw new OcrException("Tesseract failed: " + stderr.text());
     }
@@ -77,6 +77,31 @@ public final class TesseractCliEngine implements OcrEngine {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new OcrException("Interrupted while reading tesseract output", e);
+    }
+  }
+
+  /**
+   * Kills the child and unblocks the pipe readers. Closing the pipes first
+   * is what releases a reader blocked in {@code read()}, not the join.
+   */
+  private static void shutdownAndJoin(Process process, Thread... readers) {
+    process.destroyForcibly();
+    closeQuietly(process.getInputStream());
+    closeQuietly(process.getErrorStream());
+    for (Thread reader : readers) {
+      try {
+        reader.join(5_000L);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  private static void closeQuietly(java.io.Closeable closeable) {
+    try {
+      closeable.close();
+    } catch (IOException ignored) {
+      // Best effort: the reader unblocks either way.
     }
   }
 
