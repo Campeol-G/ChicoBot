@@ -20,3 +20,6 @@ dependency-reduced-pom.xml
 
 # Manual test checklist (personal working notes, not tracked)
 docs/test-plan.md
+
+# Process docs (specs/plans): kept locally, never pushed.
+docs/superpowers/
