@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -299,5 +301,48 @@ class ImportFromImageTest {
     } catch (CompletionException e) {
       assertEquals(ImportFromImage.Reason.NO_TRACKS, reasonOf(e));
     }
+  }
+
+  @Test
+  void importBusyFailsFast() throws Exception {
+    byte[] png = tinyPng();
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    OcrEngine blocking =
+        bs -> {
+          entered.countDown();
+          try {
+            release.await();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new dev.chico.bot.ocr.OcrException("interrupted", e);
+          }
+          return lines(List.of("Alpha"));
+        };
+    Config busyConfig =
+        new Config(
+            Map.of(
+                "DISCORD_TOKEN", "test", "OCR_MAX_CONCURRENCY", "1", "OCR_TIMEOUT_MS", "200"));
+    ImportFromImage flow =
+        new ImportFromImage(
+            busyConfig,
+            new FakeDownloader(png),
+            blocking,
+            new DefaultTrackLineParser(),
+            new ImagePreprocessor(busyConfig.imgMaxPixels()),
+            new ImportSession.Store());
+    var first = flow.run(7L, 9L, List.of(attachment("a.png")));
+    assertTrue(entered.await(5, TimeUnit.SECONDS));
+    try {
+      flow.run(7L, 9L, List.of(attachment("b.png")))
+          .orTimeout(3, TimeUnit.SECONDS)
+          .join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.OCR_FAILED, reasonOf(e));
+    } finally {
+      release.countDown();
+    }
+    assertEquals(1, first.join().tracks().size());
   }
 }

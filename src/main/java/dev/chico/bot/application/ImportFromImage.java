@@ -9,6 +9,7 @@ import dev.chico.bot.parser.ParsedTrack;
 import dev.chico.bot.parser.TrackLineParser;
 import dev.chico.bot.parser.TrackListMerger;
 import dev.chico.bot.security.AttachmentPolicy;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -61,6 +62,7 @@ public final class ImportFromImage {
   private final ImagePreprocessor preprocessor;
   private final ImportSession.Store sessions;
   private final Semaphore ocrSlots;
+  private final Duration ocrTimeout;
   private final long maxBytes;
   private final long maxPixels;
   private final int maxTracks;
@@ -78,6 +80,7 @@ public final class ImportFromImage {
     this.preprocessor = preprocessor;
     this.sessions = sessions;
     this.ocrSlots = new Semaphore(config.ocrMaxConcurrency());
+    this.ocrTimeout = Duration.ofMillis(config.ocrTimeoutMs());
     this.maxBytes = config.imgMaxBytes();
     this.maxPixels = config.imgMaxPixels();
     this.maxTracks = config.importMaxTracks();
@@ -86,14 +89,17 @@ public final class ImportFromImage {
   public CompletableFuture<ImportResult> run(
       long userId, long guildId, List<AttachmentInput> attachments) {
     return CompletableFuture.supplyAsync(
-        () -> {
-          try {
-            return importSync(userId, guildId, attachments);
-          } catch (ImportException e) {
-            throw new CompletionException(e);
-          }
-        },
-        EXECUTOR);
+            () -> {
+              try {
+                return importSync(userId, guildId, attachments);
+              } catch (ImportException e) {
+                throw new CompletionException(e);
+              }
+            },
+            EXECUTOR)
+        // POR QUE: one slot covers download+preprocess+OCR per image, so the
+        // total fits in images * (HTTP timeout + OCR timeout) plus slack.
+        .orTimeout(5 * (10 + ocrTimeout.toSeconds()) + 5, java.util.concurrent.TimeUnit.SECONDS);
   }
 
   private ImportResult importSync(long userId, long guildId, List<AttachmentInput> attachments)
@@ -148,6 +154,27 @@ public final class ImportFromImage {
       throw new ImportException(
           Reason.ATTACHMENT_REJECTED, "That image is not supported. Send a PNG or JPEG.");
     }
+    boolean slot = false;
+    try {
+      // POR QUE: the slot covers download+preprocess too — those hold the
+      // largest transient buffers, so bounding only OCR still OOMs.
+      slot = ocrSlots.tryAcquire(ocrTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+      if (!slot) {
+        throw new ImportException(
+            Reason.OCR_FAILED, "The bot is busy right now. Try again.");
+      }
+      return readOneGuarded(in, index);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
+    } finally {
+      if (slot) {
+        ocrSlots.release();
+      }
+    }
+  }
+
+  private List<ParsedTrack> readOneGuarded(AttachmentInput in, int index) throws ImportException {
     long stage = System.currentTimeMillis();
     byte[] raw = downloader.download(in);
     if (AttachmentPolicy.validateBytes(raw, maxPixels)
@@ -170,16 +197,8 @@ public final class ImportFromImage {
     OcrResult ocrResult;
     stage = System.currentTimeMillis();
     try {
-      ocrSlots.acquire();
-      try {
-        ocrResult = ocr.read(png);
-      } finally {
-        ocrSlots.release();
-      }
+      ocrResult = ocr.read(png);
     } catch (OcrException e) {
-      throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
       throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
     }
     stage = System.currentTimeMillis() - stage;
