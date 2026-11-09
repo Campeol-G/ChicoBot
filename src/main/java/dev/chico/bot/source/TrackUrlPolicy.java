@@ -168,7 +168,7 @@ public final class TrackUrlPolicy {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
     return switch (segments.get(0)) {
-      case "track", "episode" -> accepted(Source.SPOTIFY, uri);
+      case "track", "episode" -> rejected(UrlDecision.Reason.SPOTIFY);
       case "album", "playlist", "show" -> rejected(UrlDecision.Reason.PLAYLIST);
       default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     };
@@ -184,8 +184,9 @@ public final class TrackUrlPolicy {
     if (segments.size() != 1) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    // Short links hide the content type; the resolver classifies after resolving.
-    return accepted(Source.SPOTIFY, uri);
+    // Short links hide the content type; without credentials nothing
+    // behind them can resolve, so refuse with the Spotify message.
+    return rejected(UrlDecision.Reason.SPOTIFY);
   }
 
   private static UrlDecision appleMusic(URI uri) {

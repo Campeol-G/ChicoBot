@@ -261,6 +261,17 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void playSpotifyLinkReportsSpotifyUnsupported() {
+    PlaybackService.PlayResult result =
+        service()
+            .play(1L, 2L, 3L, "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm")
+            .join();
+
+    assertFalse(result.queued());
+    assertTrue(result.message().contains("Spotify"));
+  }
+
+  @Test
   void scUrlWithNoResultsReportsSoundCloudMessage() {
     PlaybackService.PlayResult result =
         service()

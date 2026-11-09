@@ -157,23 +157,24 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void spotifyTrackAcceptedAsMetadataSource() {
-    assertAccepted(
-        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm", Source.SPOTIFY);
+  void spotifyTrackRejectedWithSpotifyReason() {
+    assertRejected(
+        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm", UrlDecision.Reason.SPOTIFY);
   }
 
   @Test
-  void spotifyEpisodeAcceptedAsMetadataSource() {
-    assertAccepted(
-        "https://open.spotify.com/episode/4uLU6hMCjMI75M1A2tKUQm", Source.SPOTIFY);
+  void spotifyEpisodeRejectedWithSpotifyReason() {
+    assertRejected(
+        "https://open.spotify.com/episode/4uLU6hMCjMI75M1A2tKUQm", UrlDecision.Reason.SPOTIFY);
   }
 
   @Test
-  void spotifyLocalePrefixAcceptedAsMetadataSource() {
-    assertAccepted(
-        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI", Source.SPOTIFY);
-    assertAccepted(
-        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI?si=abc", Source.SPOTIFY);
+  void spotifyLocalePrefixTrackRejectedWithSpotifyReason() {
+    assertRejected(
+        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI", UrlDecision.Reason.SPOTIFY);
+    assertRejected(
+        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI?si=abc",
+        UrlDecision.Reason.SPOTIFY);
   }
 
   @Test
@@ -184,8 +185,8 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void spotifyShortLinkAcceptedAsMetadataSource() {
-    assertAccepted("https://spotify.link/abc123", Source.SPOTIFY);
+  void spotifyShortLinkRejectedWithSpotifyReason() {
+    assertRejected("https://spotify.link/abc123", UrlDecision.Reason.SPOTIFY);
   }
 
   @Test
