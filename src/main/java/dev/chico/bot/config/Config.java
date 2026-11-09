@@ -15,6 +15,7 @@ public final class Config {
           "DISCORD_TOKEN is not set. Load it from ~/.config/chicos-bot/env (see README)");
     }
     devGuildId();
+    validate();
   }
 
   public String token() {
@@ -41,7 +42,7 @@ public final class Config {
       return Optional.empty();
     }
     try {
-      return Optional.of(Long.parseUnsignedLong(raw));
+      return Optional.of(Long.parseLong(raw));
     } catch (NumberFormatException ex) {
       throw new IllegalArgumentException("DEV_GUILD_ID must be a numeric guild id");
     }
@@ -119,12 +120,65 @@ public final class Config {
     return env.getOrDefault("DISCORD_TOKEN", "").strip();
   }
 
+  /**
+   * Fails the boot on values that would break playback far from the cause.
+   * Ranges keep every pinned behavior valid: {@code *_COOLDOWN_S=0} and
+   * {@code QUEUE_MAX=0} still boot, only negatives and zeros where a zero
+   * hangs are refused.
+   */
+  private void validate() {
+    nonNegative("QUEUE_MAX", queueMax());
+    nonNegative("COOLDOWN_USER_S", cooldownUserS());
+    nonNegative("PLAY_COOLDOWN_S", playCooldownS());
+    nonNegative("SOURCE_DEGRADED_COOLDOWN_S", sourceDegradedCooldownS());
+    nonNegative("IDLE_DISCONNECT_S", idleDisconnectS());
+    positive("OCR_TIMEOUT_MS", ocrTimeoutMs());
+    positive("RESOLVE_TIMEOUT_MS", resolveTimeoutMs());
+    positive("IMG_MAX_BYTES", imgMaxBytes());
+    positive("IMG_MAX_PIXELS", imgMaxPixels());
+    positive("IMPORT_MAX_TRACKS", importMaxTracks());
+    positive("IMPORT_SESSION_TTL_S", importSessionTtlS());
+    positive("SOURCE_FAILURE_THRESHOLD", sourceFailureThreshold());
+    positive("RESOLVE_CONCURRENCY", resolveConcurrency());
+    positive("OCR_MAX_CONCURRENCY", ocrMaxConcurrency());
+    double threshold = matchThreshold();
+    if (!(threshold >= 0.0) || !(threshold <= 1.0)) {
+      throw new IllegalArgumentException("bad config MATCH_THRESHOLD: must be within 0.0..1.0");
+    }
+    if (ytCipherUrl().isPresent() && ytCipherPassword().isBlank()) {
+      throw new IllegalArgumentException(
+          "bad config YT_CIPHER_PASSWORD: required when YT_CIPHER_URL is set");
+    }
+  }
+
+  private static void nonNegative(String key, long value) {
+    if (value < 0) {
+      throw new IllegalArgumentException("bad config " + key + ": must be >= 0");
+    }
+  }
+
+  private static void positive(String key, long value) {
+    if (value <= 0) {
+      throw new IllegalArgumentException("bad config " + key + ": must be > 0");
+    }
+  }
+
+  private static void positive(String key, double value) {
+    if (!(value > 0)) {
+      throw new IllegalArgumentException("bad config " + key + ": must be > 0");
+    }
+  }
+
   private int parseInt(String key, int fallback) {
     String raw = env.get(key);
     if (raw == null || raw.isBlank()) {
       return fallback;
     }
-    return Integer.parseInt(raw.strip());
+    try {
+      return Integer.parseInt(raw.strip());
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("bad config " + key + ": not a number", e);
+    }
   }
 
   private long parseLong(String key, long fallback) {
@@ -132,7 +186,11 @@ public final class Config {
     if (raw == null || raw.isBlank()) {
       return fallback;
     }
-    return Long.parseLong(raw.strip());
+    try {
+      return Long.parseLong(raw.strip());
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("bad config " + key + ": not a number", e);
+    }
   }
 
   private double parseDouble(String key, double fallback) {
@@ -140,6 +198,10 @@ public final class Config {
     if (raw == null || raw.isBlank()) {
       return fallback;
     }
-    return Double.parseDouble(raw.strip());
+    try {
+      return Double.parseDouble(raw.strip());
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("bad config " + key + ": not a number", e);
+    }
   }
 }

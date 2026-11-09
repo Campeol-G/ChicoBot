@@ -85,6 +85,43 @@ class ConfigTest {
   }
 
   @Test
+  void negativeQueueMaxRejectedWithKeyName() {
+    IllegalArgumentException ex = assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder", "QUEUE_MAX", "-1")));
+
+    assertTrue(ex.getMessage().contains("QUEUE_MAX"), "got: " + ex.getMessage());
+  }
+
+  @Test
+  void zeroQueueMaxStillBoots() {
+    assertEquals(
+        0,
+        new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder", "QUEUE_MAX", "0")).queueMax());
+  }
+
+  @Test
+  void nonNumericValueRejectedWithKeyName() {
+    IllegalArgumentException ex = assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder", "OCR_TIMEOUT_MS", "abc")));
+
+    assertTrue(ex.getMessage().contains("OCR_TIMEOUT_MS"), "got: " + ex.getMessage());
+  }
+
+  @Test
+  void cipherUrlWithoutPasswordRejected() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "YT_CIPHER_URL", "http://localhost:8001")));
+  }
+
+  @Test
   void ytRefreshTokenEmptyByDefault() {
     Config config = new Config(envWithToken());
 
