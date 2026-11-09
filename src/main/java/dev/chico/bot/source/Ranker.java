@@ -70,7 +70,7 @@ public final class Ranker {
   }
 
   private static boolean hasUnwantedVersion(String candidateText, String target) {
-    Set<String> targetWords = Set.of(target.split(" "));
+    Set<String> targetWords = new java.util.HashSet<>(java.util.Arrays.asList(target.split(" ")));
     for (String word : candidateText.split(" ")) {
       if (VERSION_WORDS.contains(word) && !targetWords.contains(word)) {
         return true;

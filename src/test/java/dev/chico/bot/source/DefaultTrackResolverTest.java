@@ -401,6 +401,43 @@ class DefaultTrackResolverTest {
   }
 
   @Test
+  void ocrQueryNearMissPassesAtRecallThreshold() throws Exception {
+    // POR QUE: the same pair scores ~0.585, filtered at 0.6 but kept at the
+    // recall-first 0.35 default — the user prefers a close match over not-found.
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"));
+    soundcloud.searchResult = List.of();
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.35);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(new dev.chico.bot.parser.ParsedTrack("raw", "Sp.lral", "Nujabes", 90.0)))
+            .get();
+
+    assertEquals(1, result.size());
+  }
+
+  @Test
+  void ocrQueryWithNoCandidatesStaysNotFound() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult = List.of();
+    soundcloud.searchResult = List.of();
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.35);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(new dev.chico.bot.parser.ParsedTrack("raw", "zxqw", "jklp", 90.0)))
+            .get();
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
   void ocrQueryAboveThresholdRanksFirst() throws Exception {
     FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
     FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);

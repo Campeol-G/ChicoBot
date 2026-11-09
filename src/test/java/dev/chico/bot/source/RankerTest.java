@@ -19,6 +19,16 @@ class RankerTest {
   }
 
   @Test
+  void repeatedWordsDoNotCrashScoring() {
+    Ranker ranker = new Ranker(0.35);
+
+    double score =
+        ranker.score(candidate("undressed", "sombr", 200), "undressed undressed sombr");
+
+    assertTrue(score >= 0.0 && score <= 1.0, "score stays in range, got " + score);
+  }
+
+  @Test
   void exactMatchScoresHigherThanDifferentTrack() {
     Ranker ranker = new Ranker(0.0);
     String target = "Tim Maia - Azul da Cor do Mar";

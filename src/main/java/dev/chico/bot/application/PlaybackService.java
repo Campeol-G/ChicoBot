@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory;
 /** Resolves any input to playable candidates and controls per-guild playback. */
 public final class PlaybackService {
 
-  private static final int MAX_SEARCH_RESULTS = 5;
+  private static final int MAX_SEARCH_RESULTS = 10;
   private static final URI ITUNES_LOOKUP = URI.create("https://itunes.apple.com/lookup");
 
   private static final Logger log = LoggerFactory.getLogger(PlaybackService.class);
