@@ -11,6 +11,8 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Music commands. Playback stays in the application layer; this formats output. */
 public final class MusicCommands extends ListenerAdapter {
@@ -24,6 +26,8 @@ public final class MusicCommands extends ListenerAdapter {
   static final String REMOVE = "remove";
   static final String LEAVE = "leave";
   static final String NOW_PLAYING = "nowplaying";
+
+  private static final Logger log = LoggerFactory.getLogger(MusicCommands.class);
 
   private final PlaybackService playback;
 
@@ -97,14 +101,21 @@ public final class MusicCommands extends ListenerAdapter {
   }
 
   private void onPlay(SlashCommandInteractionEvent event) {
-    if (event.getMember() == null || event.getGuild() == null) {
+    if (event.getGuild() == null) {
+      event.reply("This only works in a server.").setEphemeral(true).queue();
+      return;
+    }
+    if (event.getMember() == null) {
+      event.reply("Could not resolve your member. Try again.").setEphemeral(true).queue();
       return;
     }
     OptionMapping option = event.getOption("query");
     if (option == null) {
+      event.reply("Tell me what to play: `/play <song name or link>`.").setEphemeral(true).queue();
       return;
     }
-    AudioChannelUnion channel = event.getMember().getVoiceState().getChannel();
+    var voiceState = event.getMember().getVoiceState();
+    AudioChannelUnion channel = voiceState != null ? voiceState.getChannel() : null;
     if (channel == null) {
       event.reply("Join a voice channel first.").setEphemeral(true).queue();
       return;
@@ -117,7 +128,7 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("I don't have permission to join that voice channel.").setEphemeral(true).queue();
       return;
     }
-    event.deferReply().queue();
+    event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
     long guildId = event.getGuild().getIdLong();
     long userId = event.getMember().getIdLong();
     playback
@@ -125,9 +136,11 @@ public final class MusicCommands extends ListenerAdapter {
         .thenAccept(
             result -> {
               if (result.queued()) {
-                event.getHook().sendMessageEmbeds(Embeds.nowPlaying(result.candidate())).queue();
+                event.getHook().sendMessageEmbeds(Embeds.nowPlaying(result.candidate())).queue(
+                    null, err -> log.warn("play reply failed", err));
               } else {
-                event.getHook().sendMessageEmbeds(Embeds.error(result.message())).queue();
+                event.getHook().sendMessageEmbeds(Embeds.error(result.message())).queue(
+                    null, err -> log.warn("play reply failed", err));
               }
             });
   }
@@ -154,30 +167,43 @@ public final class MusicCommands extends ListenerAdapter {
   }
 
   private void onQueue(SlashCommandInteractionEvent event) {
-    event.deferReply().queue();
+    if (event.getGuild() == null) {
+      event.reply("This only works in a server.").setEphemeral(true).queue();
+      return;
+    }
+    event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
     QueueView view = playback.queueView(guildOf(event));
     if (view.current().isEmpty() && view.queued().isEmpty()) {
-      event.getHook().sendMessageEmbeds(Embeds.error("The queue is empty.")).queue();
+      event.getHook().sendMessageEmbeds(Embeds.error("The queue is empty.")).queue(
+          null, err -> log.warn("queue reply failed", err));
       return;
     }
     java.util.List<dev.chico.bot.source.TrackCandidate> all = new java.util.ArrayList<>();
     view.current().ifPresent(all::add);
     all.addAll(view.queued());
-    event.getHook().sendMessageEmbeds(Embeds.queue(all)).queue();
+    event.getHook().sendMessageEmbeds(Embeds.queue(all)).queue(
+        null, err -> log.warn("queue reply failed", err));
   }
 
   private void onNowPlaying(SlashCommandInteractionEvent event) {
-    event.deferReply().queue();
-    QueueView view = playback.queueView(guildOf(event));
-    if (view.current().isEmpty()) {
-      event.getHook().sendMessageEmbeds(Embeds.error("Nothing is playing.")).queue();
+    if (event.getGuild() == null) {
+      event.reply("This only works in a server.").setEphemeral(true).queue();
       return;
     }
-    event.getHook().sendMessageEmbeds(Embeds.nowPlaying(view.current().orElseThrow())).queue();
+    event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
+    QueueView view = playback.queueView(guildOf(event));
+    if (view.current().isEmpty()) {
+      event.getHook().sendMessageEmbeds(Embeds.error("Nothing is playing.")).queue(
+          null, err -> log.warn("nowplaying reply failed", err));
+      return;
+    }
+    event.getHook().sendMessageEmbeds(Embeds.nowPlaying(view.current().orElseThrow())).queue(
+        null, err -> log.warn("nowplaying reply failed", err));
   }
 
   private void reply(SlashCommandInteractionEvent event, String message) {
     if (event.getMember() == null || event.getGuild() == null) {
+      event.reply("This only works in a server.").setEphemeral(true).queue();
       return;
     }
     if (isConnectedElsewhere(event)) {
@@ -206,7 +232,8 @@ public final class MusicCommands extends ListenerAdapter {
     if (selfChannel == null) {
       return false;
     }
-    var memberChannel = event.getMember().getVoiceState().getChannel();
+    var voiceState = event.getMember().getVoiceState();
+    var memberChannel = voiceState != null ? voiceState.getChannel() : null;
     return memberChannel == null || memberChannel.getIdLong() != selfChannel.getIdLong();
   }
 

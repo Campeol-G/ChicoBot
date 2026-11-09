@@ -70,16 +70,17 @@ public final class MessageListener extends ListenerAdapter {
           .getMessage()
           .reply("Tell me what to play: `@bot p <song name or link>`.")
           .setAllowedMentions(Collections.emptyList())
-          .queue();
+          .queue(null, err -> log.warn("play reply failed", err));
       return;
     }
-    AudioChannelUnion channel = event.getMember().getVoiceState().getChannel();
+    var voiceState = event.getMember().getVoiceState();
+    AudioChannelUnion channel = voiceState != null ? voiceState.getChannel() : null;
     if (channel == null) {
       event
           .getMessage()
           .reply("Join a voice channel first.")
           .setAllowedMentions(Collections.emptyList())
-          .queue();
+          .queue(null, err -> log.warn("play reply failed", err));
       return;
     }
     long guildId = event.getGuild().getIdLong();
@@ -93,13 +94,13 @@ public final class MessageListener extends ListenerAdapter {
                     .getMessage()
                     .replyEmbeds(Embeds.nowPlaying(result.candidate()))
                     .setAllowedMentions(Collections.emptyList())
-                    .queue();
+                    .queue(null, err -> log.warn("play reply failed", err));
               } else {
                 event
                     .getMessage()
                     .replyEmbeds(Embeds.error(result.message()))
                     .setAllowedMentions(Collections.emptyList())
-                    .queue();
+                    .queue(null, err -> log.warn("play reply failed", err));
               }
             });
   }

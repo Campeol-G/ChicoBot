@@ -58,9 +58,11 @@ In https://discord.com/developers/applications, on the bot app:
 - **Bot → Public Bot:** off. With it on, anyone with the link can add the bot
   to other servers.
 - **Bot → Requires OAuth2 Code Grant:** off.
-- **Bot → Privileged Gateway Intents:** all three off (Presence, Server
-  Members, Message Content). The bot receives mentions, attachments on
-  mention messages, and context-menu targets without them.
+- **Bot → Privileged Gateway Intents:** Message Content on (the `@bot p`
+  mention flow reads message text), Presence and Server Members off. The bot
+  receives mentions, attachments on mention messages, and context-menu
+  targets with Message Content; voice state still arrives without Server
+  Members.
 - **Installation → Installation Contexts:** Guild Install only; User Install off.
 - **Installation → Default Install Settings:** scopes `bot` and
   `applications.commands`, with these permissions (integer `3230720`):

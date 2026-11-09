@@ -29,7 +29,10 @@ public final class Bot {
   public JDA start() throws InterruptedException {
     JDA jda =
         JDABuilder.createLight(
-                config.token(), GatewayIntent.GUILD_MESSAGES, GatewayIntent.GUILD_VOICE_STATES)
+                config.token(),
+                GatewayIntent.GUILD_MESSAGES,
+                GatewayIntent.GUILD_VOICE_STATES,
+                GatewayIntent.MESSAGE_CONTENT)
             .enableCache(CacheFlag.VOICE_STATE)
             .setAudioModuleConfig(
                 new AudioModuleConfig().withDaveSessionFactory(new JDaveSessionFactory()))
