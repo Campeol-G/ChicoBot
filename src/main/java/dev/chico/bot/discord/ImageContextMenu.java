@@ -56,10 +56,12 @@ public final class ImageContextMenu extends ListenerAdapter {
       return;
     }
     List<AttachmentInput> inputs = new ArrayList<>();
+    // POR QUE: no local limit here — ImportFromImage caps at 5 and counts the
+    // rest as droppedImages for the preview footer. Truncating here would make
+    // the dropped count unreachable (always 0).
     for (Message.Attachment attachment
         : event.getTarget().getAttachments().stream()
             .filter(Message.Attachment::isImage)
-            .limit(5)
             .toList()) {
       URI uri;
       try {

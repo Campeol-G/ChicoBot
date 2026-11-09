@@ -184,6 +184,17 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("This only works in a server.").setEphemeral(true).queue();
       return;
     }
+    // Blocking member/voice lookups must not stall the gateway thread.
+    EXECUTOR.execute(() -> onPlayAllAsync(event, sessionId));
+  }
+
+  private void onPlayAllAsync(ButtonInteractionEvent event, UUID sessionId) {
+    Optional<ImportSession> session = sessions.get(sessionId);
+    if (session.isEmpty()) {
+      inFlight.remove(sessionId);
+      event.reply("This import expired.").setEphemeral(true).queue();
+      return;
+    }
     // Member may not be cached without the privileged GUILD_MEMBERS intent,
     // so resolve it from the guild (REST) when needed.
     net.dv8tion.jda.api.entities.Member member = event.getMember();

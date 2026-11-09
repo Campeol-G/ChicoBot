@@ -115,7 +115,10 @@ public final class MessageListener extends ListenerAdapter {
       return;
     }
     List<AttachmentInput> inputs = new ArrayList<>();
-    for (Message.Attachment attachment : images.stream().limit(5).toList()) {
+    // POR QUE: no local limit here — ImportFromImage caps at 5 and counts the
+    // rest as droppedImages for the preview footer. Truncating here would make
+    // the dropped count unreachable (always 0).
+    for (Message.Attachment attachment : images) {
       URI uri;
       try {
         uri = new URI(attachment.getUrl());

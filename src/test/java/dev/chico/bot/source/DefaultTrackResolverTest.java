@@ -438,6 +438,28 @@ class DefaultTrackResolverTest {
   }
 
   @Test
+  void ocrQueryUnrelatedCandidateStillEnqueuesAtRecallThreshold() throws Exception {
+    // POR QUE: recall-first per user call 2026-11-09 — at 0.35 even an
+    // unrelated candidate scores above the gate, so it enqueues instead of
+    // becoming not-found. Pins the accepted precision tradeoff (v1.1 item 14
+    // owns real ranking).
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"));
+    soundcloud.searchResult = List.of();
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.35);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(new dev.chico.bot.parser.ParsedTrack("raw", "zxqw", "jklp", 90.0)))
+            .get();
+
+    assertEquals(1, result.size());
+  }
+
+  @Test
   void ocrQueryAboveThresholdRanksFirst() throws Exception {
     FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
     FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
