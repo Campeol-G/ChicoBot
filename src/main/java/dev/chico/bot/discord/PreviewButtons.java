@@ -337,20 +337,26 @@ public final class PreviewButtons extends ListenerAdapter {
               }
               int notFound = tracks.size() - ordered.size();
               int enqueued = 0;
+              boolean joinFailed = false;
               try {
                 if (!ordered.isEmpty()) {
-                  playback.connect(guildId, voiceChannel.getIdLong());
-                  enqueued = playback.enqueueResolved(guildId, ordered);
+                  if (!playback.connect(guildId, voiceChannel.getIdLong())) {
+                    joinFailed = true;
+                  } else {
+                    enqueued = playback.enqueueResolved(guildId, ordered);
+                  }
                 }
               } catch (Exception e) {
                 log.warn("Play all enqueue failed", e);
               }
               int didNotFit = ordered.size() - enqueued;
               String report = "Enqueued " + enqueued + ".";
-              if (notFound > 0) {
+              if (joinFailed) {
+                report = "Could not join that voice channel.";
+              } else if (notFound > 0) {
                 report += " " + notFound + " not found.";
               }
-              if (didNotFit > 0) {
+              if (didNotFit > 0 && !joinFailed) {
                 report += " " + didNotFit + " did not fit in the queue.";
               }
               if (failure != null && ordered.isEmpty()) {

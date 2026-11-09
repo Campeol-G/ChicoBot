@@ -38,8 +38,20 @@ class PlaybackServiceTest {
     final AtomicInteger connects = new AtomicInteger();
 
     @Override
-    public void connect(long guildId, long voiceChannelId) {
+    public boolean connect(long guildId, long voiceChannelId) {
       connects.incrementAndGet();
+      return true;
+    }
+
+    @Override
+    public void disconnect(long guildId) {
+    }
+  }
+
+  static final class RefusingVoice implements VoiceConnector {
+    @Override
+    public boolean connect(long guildId, long voiceChannelId) {
+      return false;
     }
 
     @Override
@@ -244,7 +256,7 @@ class PlaybackServiceTest {
   }
 
   private static PlaybackService serviceWith(
-      SilentVoice voice, Config config, Clock clock, TrackResolver resolver) {
+      VoiceConnector voice, Config config, Clock clock, TrackResolver resolver) {
     return new PlaybackService(voice, config, clock, resolver);
   }
 
@@ -468,6 +480,23 @@ class PlaybackServiceTest {
     assertTrue(message.contains("Removed"));
     assertTrue(message.contains("Beta"));
     assertTrue(message.contains("2"));
+  }
+
+  @Test
+  void playDoesNotEnqueueWhenConnectFails() {
+    PlaybackService service =
+        serviceWith(
+            new RefusingVoice(),
+            new Config(Map.of("DISCORD_TOKEN", "test")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("Alpha"))));
+
+    PlaybackService.PlayResult result = service.play(1L, 2L, 3L, "alpha").join();
+
+    assertFalse(result.queued());
+    assertTrue(result.message().contains("Could not join"));
+    assertTrue(service.queueView(1L).queued().isEmpty());
+    assertTrue(service.queueView(1L).current().isEmpty());
   }
 
   @Test

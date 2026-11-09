@@ -21,14 +21,14 @@ public final class JdaVoiceConnector implements VoiceConnector {
   }
 
   @Override
-  public void connect(long guildId, long voiceChannelId) {
+  public boolean connect(long guildId, long voiceChannelId) {
     Guild guild = jda.getGuildById(guildId);
     if (guild == null) {
-      return;
+      return false;
     }
     VoiceChannel channel = guild.getVoiceChannelById(voiceChannelId);
     if (channel == null) {
-      return;
+      return false;
     }
     if (!guild
         .getSelfMember()
@@ -36,11 +36,12 @@ public final class JdaVoiceConnector implements VoiceConnector {
             channel,
             net.dv8tion.jda.api.Permission.VOICE_CONNECT,
             net.dv8tion.jda.api.Permission.VOICE_SPEAK)) {
-      return;
+      return false;
     }
     AudioManager audio = guild.getAudioManager();
     audio.setSendingHandler(handlerProvider.apply(guildId));
     audio.openAudioConnection(channel);
+    return true;
   }
 
   @Override

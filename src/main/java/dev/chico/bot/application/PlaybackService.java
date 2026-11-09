@@ -120,8 +120,8 @@ public final class PlaybackService {
   }
 
   /** Connects to a voice channel. Used by the import preview. */
-  public void connect(long guildId, long voiceChannelId) {
-    connector.connect(guildId, voiceChannelId);
+  public boolean connect(long guildId, long voiceChannelId) {
+    return connector.connect(guildId, voiceChannelId);
   }
 
   /**
@@ -323,7 +323,9 @@ public final class PlaybackService {
                 return refused("Nothing found. Try another name or link.");
               }
               TrackCandidate best = candidates.get(0);
-              connector.connect(guildId, voiceChannelId);
+              if (!connector.connect(guildId, voiceChannelId)) {
+                return refused("Could not join that voice channel.");
+              }
               TrackCandidate clone = cloneOf(best);
               int accepted = musicManager(guildId).enqueueAll(List.of(clone));
               if (accepted == 0) {
