@@ -85,6 +85,9 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (pending != null && pending.track() != track) {
       return;
     }
+    log.info(
+        "track ended reason={} mayStartNext={} title={}",
+        endReason, endReason.mayStartNext, track.getInfo().title);
     if (!endReason.mayStartNext) {
       current = null;
       pending = null;
