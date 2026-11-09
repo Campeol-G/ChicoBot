@@ -68,6 +68,23 @@ class LavaplayerTrackLoaderTest {
     }
   }
 
+  private static final class EmptyPlaylistSource extends NullSource {
+    @Override
+    public AudioItem loadItem(AudioPlayerManager manager, AudioReference reference) {
+      return new com.sedmelluq.discord.lavaplayer.track.BasicAudioPlaylist(
+          "empty", List.of(), null, false);
+    }
+  }
+
+  @Test
+  void emptyPlaylistGivesEmptyList() throws Exception {
+    LavaplayerTrackLoader loader =
+        new LavaplayerTrackLoader(
+            Source.YOUTUBE, managerWith(new EmptyPlaylistSource()), 5, Duration.ofSeconds(5));
+
+    assertTrue(loader.loadUrl(ANY_URI).get().isEmpty());
+  }
+
   @Test
   void noMatchesGivesEmptyList() throws Exception {
     LavaplayerTrackLoader loader =

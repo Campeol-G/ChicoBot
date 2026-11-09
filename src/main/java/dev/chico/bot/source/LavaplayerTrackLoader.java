@@ -81,6 +81,10 @@ public final class LavaplayerTrackLoader implements TrackLoader {
 
           @Override
           public void playlistLoaded(AudioPlaylist playlist) {
+            if (playlist.getTracks().isEmpty()) {
+              future.complete(List.of());
+              return;
+            }
             AudioTrack first =
                 playlist.getSelectedTrack() != null
                     ? playlist.getSelectedTrack()

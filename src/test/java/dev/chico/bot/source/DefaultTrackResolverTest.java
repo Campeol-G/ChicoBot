@@ -240,6 +240,24 @@ class DefaultTrackResolverTest {
   }
 
   @Test
+  void scShortCodeWithJunkResultsStaysEmpty() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlResult = List.of();
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "pumapjl & SonoTWS - Prata", "pumapjl"));
+    DefaultTrackResolver resolver = resolverWithThreshold(youtube, soundcloud, 0.6);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(Source.SOUNDCLOUD, URI.create("https://on.soundcloud.com/AbCdEf")))
+            .get();
+
+    assertTrue(result.isEmpty());
+  }
+
+  @Test
   void scUrlEmptyFallsBackToSlugSearch() throws Exception {
     FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
     FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);

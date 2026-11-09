@@ -88,7 +88,9 @@ public final class DefaultTrackResolver implements TrackResolver {
       List<TrackCandidate> candidates, String text) {
     double threshold = ranker.threshold();
     return candidates.stream()
-        .sorted(Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text)).reversed())
+        .sorted(Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text)).reversed()
+            .thenComparing(
+                c -> c.duration() == null ? Long.MAX_VALUE : c.duration().getSeconds()))
         .filter(candidate -> ranker.score(candidate, text) >= threshold)
         .toList();
   }
@@ -141,7 +143,7 @@ public final class DefaultTrackResolver implements TrackResolver {
   }
 
   private CompletableFuture<List<TrackCandidate>> searchRanked(String text) {
-    return resolveSearch(text).thenApply(candidates -> ranked(candidates, text));
+    return resolveSearch(text).thenApply(candidates -> rankedAboveThreshold(candidates, text));
   }
 
   static java.util.Optional<String> slugText(URI uri) {
