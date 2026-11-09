@@ -17,12 +17,16 @@ public class ImageDownloader {
   private final long maxBytes;
 
   public ImageDownloader(long maxBytes) {
-    this.maxBytes = maxBytes;
-    this.client =
+    this(maxBytes,
         HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5))
-            .build();
+            .build());
+  }
+
+  ImageDownloader(long maxBytes, HttpClient client) {
+    this.maxBytes = maxBytes;
+    this.client = client;
   }
 
   public byte[] download(AttachmentInput in) throws ImportFromImage.ImportException {
@@ -50,6 +54,11 @@ public class ImageDownloader {
           ImportFromImage.Reason.DOWNLOAD_FAILED, "Could not download the image.");
     }
     if (response.statusCode() / 100 != 2) {
+      try {
+        response.body().close();
+      } catch (IOException ignored) {
+        // Best effort: the download already failed.
+      }
       throw new ImportFromImage.ImportException(
           ImportFromImage.Reason.DOWNLOAD_FAILED, "Could not download the image.");
     }
