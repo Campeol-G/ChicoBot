@@ -141,4 +141,63 @@ class TrackLineParserTest {
     assertEquals("Alpha", tracks.get(0).title());
     assertEquals("Bravo", tracks.get(0).artist());
   }
+
+  @Test
+  void alternatingGapPairsTitleAndArtist() {
+    // POR QUE: real dark prints use a small title->artist gap and a larger
+    // between-track gap; the jump threshold must keep each pair together.
+    // Truly uniform pitch stays merged (dense fallback, see
+    // extraLinesInOneRowBecomeTitleOnlyTracks) pending TSV ground truth.
+    List<OcrWord> words =
+        List.of(
+            wordAt("TitleOne", 0, 0, 1),
+            wordAt("ArtistOne", 0, 25, 2),
+            wordAt("TitleTwo", 0, 60, 3),
+            wordAt("ArtistTwo", 0, 85, 4));
+    OcrResult ocr = new OcrResult(words, Duration.ZERO);
+
+    List<ParsedTrack> tracks = new DefaultTrackLineParser().parse(ocr);
+
+    assertEquals(2, tracks.size());
+    assertEquals("TitleOne", tracks.get(0).title());
+    assertEquals("ArtistOne", tracks.get(0).artist());
+    assertEquals("TitleTwo", tracks.get(1).title());
+    assertEquals("ArtistTwo", tracks.get(1).artist());
+  }
+
+  @Test
+  void playIconPrefixStrippedButSingleLetterTitleKept() {
+    List<OcrWord> iconLine =
+        List.of(
+            new OcrWord("D)", 0, 0, 18, 20, 95.0f, 1, 1, 1),
+            new OcrWord("sombr", 22, 0, 60, 20, 95.0f, 1, 1, 1));
+    OcrResult iconOcr = new OcrResult(iconLine, Duration.ZERO);
+    List<ParsedTrack> iconTracks = new DefaultTrackLineParser().parse(iconOcr);
+
+    assertEquals(1, iconTracks.size());
+    assertEquals("sombr", iconTracks.get(0).title());
+
+    List<OcrWord> loneE = List.of(wordAt("E", 0, 0, 1));
+    List<ParsedTrack> loneTracks =
+        new DefaultTrackLineParser().parse(new OcrResult(loneE, Duration.ZERO));
+
+    assertEquals(1, loneTracks.size());
+    assertEquals("E", loneTracks.get(0).title());
+  }
+
+  @Test
+  void emDashNoisePrefixStripped() {
+    List<OcrWord> words =
+        List.of(
+            new OcrWord("——N", 0, 0, 30, 20, 95.0f, 1, 1, 1),
+            new OcrWord("More", 34, 0, 40, 20, 95.0f, 1, 1, 1),
+            new OcrWord("Than", 78, 0, 40, 20, 95.0f, 1, 1, 1),
+            new OcrWord("AW", 122, 0, 30, 20, 95.0f, 1, 1, 1));
+    OcrResult ocr = new OcrResult(words, Duration.ZERO);
+
+    List<ParsedTrack> tracks = new DefaultTrackLineParser().parse(ocr);
+
+    assertEquals(1, tracks.size());
+    assertEquals("More Than AW", tracks.get(0).title());
+  }
 }

@@ -23,6 +23,8 @@ public final class DefaultTrackLineParser implements TrackLineParser {
   private static final Pattern PURE_NUMBER = Pattern.compile("^\\d+$");
   private static final Pattern SINGLE_LOWER_LETTER = Pattern.compile("^[a-z]$");
   private static final Pattern SINGLE_LETTER = Pattern.compile("^[a-zA-Z]$");
+  private static final Pattern LEADING_ICON_TOKEN =
+      Pattern.compile("^(?:[\\p{So}▶▷►\\-—–·»]+[A-Za-z]?|D\\)|[A-Za-z]\\))$");
   private static final Pattern TRAILING_DURATION = Pattern.compile("^\\d{1,3}:\\d{2}$");
   private static final Pattern BADGE_TOKEN = Pattern.compile("^(E|B|El)$");
   private static final Pattern SYMBOL_TOKEN = Pattern.compile("^[\\W_]+$");
@@ -153,13 +155,20 @@ public final class DefaultTrackLineParser implements TrackLineParser {
 
   private static List<OcrWord> clean(List<OcrWord> input, int pageWidth) {
     Deque<OcrWord> words = new ArrayDeque<>(input);
-    if (words.size() == 1 && SINGLE_LETTER.matcher(words.getFirst().text()).matches()) {
+    if (words.size() == 1 && SINGLE_LOWER_LETTER.matcher(words.getFirst().text()).matches()) {
       return List.of();
+    }
+    if (words.size() == 1 && SINGLE_LETTER.matcher(words.getFirst().text()).matches()) {
+      return List.copyOf(words);
     }
     while (!words.isEmpty() && LEADING_NUMBER.matcher(words.getFirst().text()).matches()) {
       words.removeFirst();
     }
     if (words.size() > 1 && SINGLE_LOWER_LETTER.matcher(words.getFirst().text()).matches()) {
+      words.removeFirst();
+    }
+    while (words.size() > 1
+        && LEADING_ICON_TOKEN.matcher(words.getFirst().text()).matches()) {
       words.removeFirst();
     }
     while (!words.isEmpty()
