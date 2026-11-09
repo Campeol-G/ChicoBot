@@ -20,6 +20,20 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Discord client bootstrap. */
 public final class Bot {
 
+  private static final java.util.Set<String> MANAGED_COMMANDS =
+      java.util.Set.of(
+          MusicCommands.PLAY,
+          MusicCommands.PAUSE,
+          MusicCommands.RESUME,
+          MusicCommands.SKIP,
+          MusicCommands.STOP,
+          MusicCommands.QUEUE,
+          MusicCommands.REMOVE,
+          MusicCommands.LEAVE,
+          MusicCommands.NOW_PLAYING,
+          ImageContextMenu.COMMAND,
+          "ping");
+
   private final Config config;
 
   public Bot(Config config) {
@@ -71,44 +85,26 @@ public final class Bot {
   private void registerPlay(JDA jda) {
     if (config.devGuildId().isPresent()) {
       Guild guild = jda.getGuildById(config.devGuildId().orElseThrow());
-      if (guild != null) {
-        MusicCommands.register(guild);
-        ImageContextMenu.register(guild);
-        jda.retrieveCommands()
-            .queue(
-                globals ->
-                    globals.stream()
-                        .filter(command -> isManaged(command.getName()))
-                        .forEach(command -> command.delete().queue()));
-        return;
+      if (guild == null) {
+        // POR QUE: falling through would register dev commands globally.
+        throw new IllegalStateException(
+            "DEV_GUILD_ID does not match a guild this bot is in; refusing to register globally");
       }
+      MusicCommands.register(guild);
+      ImageContextMenu.register(guild);
+      jda.retrieveCommands()
+          .queue(
+              globals ->
+                  globals.stream()
+                      .filter(command -> isManaged(command.getName()))
+                      .forEach(command -> command.delete().queue()));
+      return;
     }
     MusicCommands.registerGlobal(jda);
     ImageContextMenu.registerGlobal(jda);
-    for (Guild guild : jda.getGuilds()) {
-      guild
-          .retrieveCommands()
-          .queue(
-              commands ->
-                  commands.stream()
-                      .filter(command -> isManaged(command.getName()))
-                      .forEach(command -> command.delete().queue()));
-    }
   }
 
   private static boolean isManaged(String name) {
-    return java.util.Set.of(
-            MusicCommands.PLAY,
-            MusicCommands.PAUSE,
-            MusicCommands.RESUME,
-            MusicCommands.SKIP,
-            MusicCommands.STOP,
-            MusicCommands.QUEUE,
-            MusicCommands.REMOVE,
-            MusicCommands.LEAVE,
-            MusicCommands.NOW_PLAYING,
-            ImageContextMenu.COMMAND,
-            "ping")
-        .contains(name);
+    return MANAGED_COMMANDS.contains(name);
   }
 }
