@@ -123,11 +123,68 @@ class ImportFromImageTest {
   @Test
   void capsAtImportMaxTracks() throws Exception {
     byte[] png = tinyPng();
-    var ocr = new FakeOcr(List.of(lines(WORDS)));
+    List<String> sixty = new ArrayList<>();
+    for (int i = 0; i < 60; i++) {
+      sixty.add("Track" + i);
+    }
+    var ocr = new FakeOcr(List.of(lines(sixty)));
     var result =
         flow(new FakeDownloader(png), ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
-    assertEquals(25, result.tracks().size());
-    assertEquals(30, result.totalDetected());
+    assertEquals(50, result.tracks().size());
+    assertEquals(60, result.totalDetected());
+    assertEquals(0, result.droppedImages());
+  }
+
+  @Test
+  void sixthImageCountsAsDropped() throws Exception {
+    byte[] png = tinyPng();
+    var ocr =
+        new FakeOcr(
+            List.of(
+                lines(List.of("Alpha")),
+                lines(List.of("Beta")),
+                lines(List.of("Gamma")),
+                lines(List.of("Delta")),
+                lines(List.of("Epsilon"))));
+    List<AttachmentInput> six =
+        List.of(
+            attachment("a.png"),
+            attachment("b.png"),
+            attachment("c.png"),
+            attachment("d.png"),
+            attachment("e.png"),
+            attachment("f.png"));
+    var result = flow(new FakeDownloader(png), ocr).run(7L, 9L, six).join();
+    assertEquals(5, result.tracks().size());
+    assertEquals(5, result.totalDetected());
+    assertEquals(1, result.droppedImages());
+  }
+
+  @Test
+  void fifthImageIsRead() throws Exception {
+    byte[] png = tinyPng();
+    var ocr =
+        new FakeOcr(
+            List.of(
+                lines(List.of("Alpha")),
+                lines(List.of("Beta")),
+                lines(List.of("Gamma")),
+                lines(List.of("Delta")),
+                lines(List.of("Epsilon"))));
+    var result =
+        flow(new FakeDownloader(png), ocr)
+            .run(
+                7L,
+                9L,
+                List.of(
+                    attachment("a.png"),
+                    attachment("b.png"),
+                    attachment("c.png"),
+                    attachment("d.png"),
+                    attachment("e.png")))
+            .join();
+    assertEquals(5, result.tracks().size());
+    assertEquals(5, result.totalDetected());
   }
 
   @Test

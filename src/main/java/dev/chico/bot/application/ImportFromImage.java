@@ -48,8 +48,9 @@ public final class ImportFromImage {
     NO_TRACKS
   }
 
-  /** Session id, the capped preview list and the post-dedup count before the cap. */
-  public record ImportResult(UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
+  /** Session id, the capped preview list, the post-dedup count and dropped image count. */
+  public record ImportResult(
+      UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
   }
 
   private static final ExecutorService EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
@@ -97,10 +98,11 @@ public final class ImportFromImage {
 
   private ImportResult importSync(long userId, long guildId, List<AttachmentInput> attachments)
       throws ImportException {
-    List<AttachmentInput> first = attachments.stream().limit(3).toList();
+    List<AttachmentInput> first = attachments.stream().limit(5).toList();
     if (first.isEmpty()) {
       throw new ImportException(Reason.NO_IMAGES, "Send an image with your mention.");
     }
+    int dropped = attachments.size() - first.size();
     UUID correlation = UUID.randomUUID();
     org.slf4j.MDC.put("importId", correlation.toString());
     try {
@@ -118,9 +120,14 @@ public final class ImportFromImage {
       }
       ImportSession session = sessions.create(userId, guildId, capped);
       log.info(
-          "import {} images={} tracks={} total={} elapsedMs={}",
-          correlation, first.size(), capped.size(), total, System.currentTimeMillis() - start);
-      return new ImportResult(session.id(), capped, total);
+          "import {} images={} tracks={} total={} dropped={} elapsedMs={}",
+          correlation,
+          first.size(),
+          capped.size(),
+          total,
+          dropped,
+          System.currentTimeMillis() - start);
+      return new ImportResult(session.id(), capped, total, dropped);
     } finally {
       org.slf4j.MDC.clear();
     }

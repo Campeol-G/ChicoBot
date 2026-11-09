@@ -68,7 +68,7 @@ public final class Config {
   }
 
   public int importMaxTracks() {
-    return parseInt("IMPORT_MAX_TRACKS", 25);
+    return parseInt("IMPORT_MAX_TRACKS", 50);
   }
 
   public int importSessionTtlS() {
@@ -80,7 +80,7 @@ public final class Config {
   }
 
   public int queueMax() {
-    return parseInt("QUEUE_MAX", 200);
+    return parseInt("QUEUE_MAX", 50);
   }
 
   public int idleDisconnectS() {
@@ -108,7 +108,7 @@ public final class Config {
   }
 
   public double matchThreshold() {
-    return parseDouble("MATCH_THRESHOLD", 0.6);
+    return parseDouble("MATCH_THRESHOLD", 0.35);
   }
 
   public String logLevel() {

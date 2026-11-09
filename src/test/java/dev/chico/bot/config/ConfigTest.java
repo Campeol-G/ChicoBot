@@ -18,9 +18,19 @@ class ConfigTest {
     Config config = new Config(envWithToken());
 
     assertEquals(8388608L, config.imgMaxBytes());
-    assertEquals(0.6, config.matchThreshold());
-    assertEquals(25, config.importMaxTracks());
+    assertEquals(0.35, config.matchThreshold());
+    assertEquals(50, config.importMaxTracks());
+    assertEquals(50, config.queueMax());
     assertTrue(config.devGuildId().isEmpty());
+  }
+
+  @Test
+  void defaultsAreRecallFirstCaps() {
+    Config config = new Config(envWithToken());
+
+    assertEquals(50, config.queueMax());
+    assertEquals(50, config.importMaxTracks());
+    assertEquals(0.35, config.matchThreshold());
   }
 
   @Test

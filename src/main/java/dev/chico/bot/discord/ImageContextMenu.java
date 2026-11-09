@@ -59,7 +59,7 @@ public final class ImageContextMenu extends ListenerAdapter {
     for (Message.Attachment attachment
         : event.getTarget().getAttachments().stream()
             .filter(Message.Attachment::isImage)
-            .limit(3)
+            .limit(5)
             .toList()) {
       URI uri;
       try {

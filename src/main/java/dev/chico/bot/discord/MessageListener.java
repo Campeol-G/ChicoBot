@@ -115,7 +115,7 @@ public final class MessageListener extends ListenerAdapter {
       return;
     }
     List<AttachmentInput> inputs = new ArrayList<>();
-    for (Message.Attachment attachment : images.stream().limit(3).toList()) {
+    for (Message.Attachment attachment : images.stream().limit(5).toList()) {
       URI uri;
       try {
         uri = new URI(attachment.getUrl());
