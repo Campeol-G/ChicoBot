@@ -62,8 +62,13 @@ public final class TesseractCliEngine implements OcrEngine {
       shutdownAndJoin(process, stdoutReader, stderrReader);
       throw new OcrException("Tesseract timed out");
     }
-    join(stdoutReader);
-    join(stderrReader);
+    try {
+      join(stdoutReader);
+      join(stderrReader);
+    } catch (OcrException e) {
+      shutdownAndJoin(process, stdoutReader, stderrReader);
+      throw e;
+    }
     if (process.exitValue() != 0) {
       throw new OcrException("Tesseract failed: " + stderr.text());
     }

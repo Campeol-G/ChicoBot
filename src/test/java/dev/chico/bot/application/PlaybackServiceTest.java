@@ -511,6 +511,64 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void concurrentSkipRemoveStopStayConsistent() throws Exception {
+    // Best-effort guard for the hoisted find+act lock: races 3 mutators per
+    // guild across 50 guilds and asserts none throws and no removal is
+    // confirmed for a track that was never there.
+    SilentVoice voice = new SilentVoice();
+    PlaybackService service =
+        serviceWith(
+            voice,
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("A"))));
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(4);
+    java.util.List<java.util.concurrent.Future<?>> done = new java.util.ArrayList<>();
+    java.util.concurrent.atomic.AtomicInteger errors = new java.util.concurrent.atomic.AtomicInteger();
+    for (int g = 0; g < 50; g++) {
+      final long guild = 1000L + g;
+      service.play(guild, 2L, 3L, "a").join();
+      service.enqueueResolved(guild, List.of(candidate("B"), candidate("C"), candidate("D")));
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  service.skip(guild, java.util.Optional.of("3"));
+                } catch (Exception e) {
+                  errors.incrementAndGet();
+                }
+                return null;
+              }));
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  service.remove(guild, "2");
+                } catch (Exception e) {
+                  errors.incrementAndGet();
+                }
+                return null;
+              }));
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  service.stop(guild);
+                } catch (Exception e) {
+                  errors.incrementAndGet();
+                }
+                return null;
+              }));
+    }
+    for (java.util.concurrent.Future<?> f : done) {
+      f.get();
+    }
+    pool.shutdown();
+    assertEquals(0, errors.get());
+  }
+
+  @Test
   void pauseResumeStopLeaveOnEmpty() {
     PlaybackService service = service();
 

@@ -18,6 +18,8 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -99,7 +101,19 @@ public final class ImportFromImage {
             EXECUTOR)
         // POR QUE: one slot covers download+preprocess+OCR per image, so the
         // total fits in images * (HTTP timeout + OCR timeout) plus slack.
-        .orTimeout(5 * (10 + ocrTimeout.toSeconds()) + 5, java.util.concurrent.TimeUnit.SECONDS);
+        .orTimeout(5 * (10_000 + ocrTimeout.toMillis()) + 5_000, TimeUnit.MILLISECONDS)
+        .exceptionallyCompose(
+            failure -> {
+              Throwable cause =
+                  failure instanceof CompletionException ? failure.getCause() : failure;
+              if (cause instanceof TimeoutException) {
+                return CompletableFuture.failedFuture(
+                    new CompletionException(
+                        new ImportException(
+                            Reason.OCR_FAILED, "Reading the image timed out. Try again.")));
+              }
+              return CompletableFuture.failedFuture(failure);
+            });
   }
 
   private ImportResult importSync(long userId, long guildId, List<AttachmentInput> attachments)

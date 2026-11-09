@@ -112,4 +112,43 @@ class CircuitBreakerTest {
     pool.shutdown();
     assertTrue(breaker.isOpen(Source.YOUTUBE));
   }
+
+  @Test
+  void isOpenDuringConcurrentFailuresNeverThrows() throws Exception {
+    // Best-effort guard for the openedAt null window: readers poll isOpen
+    // while a writer trips the breaker; any NPE fails this test.
+    CircuitBreaker breaker = new CircuitBreaker(2, Duration.ofMinutes(5), Clock.systemUTC());
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(4);
+    java.util.concurrent.atomic.AtomicBoolean failed = new java.util.concurrent.atomic.AtomicBoolean();
+    java.util.List<java.util.concurrent.Future<?>> done = new java.util.ArrayList<>();
+    done.add(
+        pool.submit(
+            () -> {
+              for (int j = 0; j < 5000; j++) {
+                breaker.recordFailure(Source.YOUTUBE);
+              }
+              return null;
+            }));
+    for (int i = 0; i < 3; i++) {
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  for (int j = 0; j < 5000; j++) {
+                    breaker.isOpen(Source.YOUTUBE);
+                  }
+                } catch (RuntimeException e) {
+                  failed.set(true);
+                }
+                return null;
+              }));
+    }
+    for (java.util.concurrent.Future<?> f : done) {
+      f.get();
+    }
+    pool.shutdown();
+    assertFalse(failed.get());
+    assertTrue(breaker.isOpen(Source.YOUTUBE));
+  }
 }

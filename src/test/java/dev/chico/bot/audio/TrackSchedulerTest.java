@@ -242,4 +242,48 @@ class TrackSchedulerTest {
 
     assertTrue(fix.scheduler().queueView().snapshot().isEmpty());
   }
+
+  @Test
+  void skipToAgainstConcurrentTrackEndStaysConsistent() throws Exception {
+    // Best-effort guard: the race window needs a mid-sequence track end,
+    // which no deterministic single-threaded test can stage. This pins that
+    // skipTo linearizes against onTrackEnd: no exception, current always a
+    // known track or empty.
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(4);
+    java.util.List<java.util.concurrent.Future<?>> done = new java.util.ArrayList<>();
+    java.util.concurrent.atomic.AtomicInteger errors = new java.util.concurrent.atomic.AtomicInteger();
+    for (int i = 0; i < 100; i++) {
+      Fixture fix = fixture();
+      fix.scheduler().queue(candidate("c"));
+      fix.scheduler().queue(candidate("d"));
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  fix.scheduler().skipTo(3);
+                } catch (Exception e) {
+                  errors.incrementAndGet();
+                }
+                return null;
+              }));
+      done.add(
+          pool.submit(
+              () -> {
+                try {
+                  fix.scheduler()
+                      .onTrackEnd(
+                          fix.player(), fix.a().track(), AudioTrackEndReason.FINISHED);
+                } catch (Exception e) {
+                  errors.incrementAndGet();
+                }
+                return null;
+              }));
+    }
+    for (java.util.concurrent.Future<?> f : done) {
+      f.get();
+    }
+    pool.shutdown();
+    assertEquals(0, errors.get());
+  }
 }

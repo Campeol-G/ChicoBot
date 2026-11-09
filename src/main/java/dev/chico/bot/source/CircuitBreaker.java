@@ -26,7 +26,11 @@ public final class CircuitBreaker {
     if (state == null || state.failures.get() < failureThreshold) {
       return false;
     }
-    if (!clock.instant().isBefore(state.openedAt.plus(cooldown))) {
+    Instant opened = state.openedAt;
+    if (opened == null) {
+      return true;
+    }
+    if (!clock.instant().isBefore(opened.plus(cooldown))) {
       states.remove(source);
       return false;
     }

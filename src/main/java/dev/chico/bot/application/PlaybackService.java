@@ -208,23 +208,27 @@ public final class PlaybackService {
       return "Nothing to skip.";
     }
     if (target.isEmpty() || target.orElseThrow().isBlank()) {
-      music.scheduler().nextTrack();
+      synchronized (music.scheduler()) {
+        music.scheduler().nextTrack();
+      }
       return "Skipped.";
     }
     String trimmed = target.orElseThrow().strip();
     try {
       if (Integer.parseInt(trimmed) == 1) {
-        music.scheduler().nextTrack();
+        synchronized (music.scheduler()) {
+          music.scheduler().nextTrack();
+        }
         return "Skipped.";
       }
     } catch (NumberFormatException notANumber) {
       // Fall through to name lookup.
     }
-    Optional<Integer> index = findQueued(music, target.orElseThrow());
-    if (index.isEmpty()) {
-      return "No queued track matches that.";
-    }
     synchronized (music.scheduler()) {
+      Optional<Integer> index = findQueued(music, target.orElseThrow());
+      if (index.isEmpty()) {
+        return "No queued track matches that.";
+      }
       music.scheduler().skipTo(index.orElseThrow() - 1);
     }
     return "Skipped.";
@@ -243,27 +247,32 @@ public final class PlaybackService {
     } catch (NumberFormatException notANumber) {
       // Fall through to name lookup.
     }
-    Optional<Integer> index = findQueued(music, target);
-    if (index.isEmpty()) {
-      return "No queued track matches that.";
-    }
-    Optional<TrackCandidate> removed;
+    String removedTitle;
+    int displayPosition;
+    // POR QUE: lookup and removal share one lock so a track end between
+    // them cannot shift the target or resurrect the confirmation.
     synchronized (music.scheduler()) {
-      removed = music.scheduler().removeAt(index.orElseThrow() - 1);
-    }
-    if (removed.isEmpty()) {
-      return "No queued track matches that.";
-    }
-    int displayPosition = index.orElseThrow() + 1;
-    try {
-      int typed = Integer.parseInt(trimmed);
-      if (typed >= 2 && typed <= music.scheduler().queueView().size() + 2) {
-        displayPosition = typed;
+      Optional<Integer> index = findQueued(music, target);
+      if (index.isEmpty()) {
+        return "No queued track matches that.";
       }
-    } catch (NumberFormatException notANumber) {
-      // Name match keeps index+1.
+      Optional<TrackCandidate> removed =
+          music.scheduler().removeAt(index.orElseThrow() - 1);
+      if (removed.isEmpty()) {
+        return "No queued track matches that.";
+      }
+      removedTitle = removed.orElseThrow().title();
+      displayPosition = index.orElseThrow() + 1;
+      try {
+        int typed = Integer.parseInt(trimmed);
+        if (typed >= 2 && typed <= music.scheduler().queueView().size() + 2) {
+          displayPosition = typed;
+        }
+      } catch (NumberFormatException notANumber) {
+        // Name match keeps index+1.
+      }
     }
-    return "Removed " + removed.orElseThrow().title() + " (position " + displayPosition + ").";
+    return "Removed " + removedTitle + " (position " + displayPosition + ").";
   }
 
   public QueueView queueView(long guildId) {
