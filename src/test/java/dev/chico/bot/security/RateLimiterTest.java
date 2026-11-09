@@ -2,6 +2,7 @@ package dev.chico.bot.security;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -62,5 +63,17 @@ class RateLimiterTest {
     assertTrue(limiter.tryAcquire("user-a", 15, clock));
     assertTrue(limiter.tryAcquire("user-b", 15, clock));
     assertFalse(limiter.tryAcquire("user-a", 15, clock));
+  }
+
+  @Test
+  void expiredKeysAreSwept() {
+    MutableClock clock = new MutableClock();
+    RateLimiter limiter = new RateLimiter();
+
+    assertTrue(limiter.tryAcquire("old", 15, clock));
+    clock.advance(Duration.ofSeconds(16));
+    assertTrue(limiter.tryAcquire("new", 15, clock));
+
+    assertEquals(1, limiter.size());
   }
 }

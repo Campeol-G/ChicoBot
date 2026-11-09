@@ -17,10 +17,11 @@ public record ImportSession(
     UUID id, long userId, long guildId, List<ParsedTrack> tracks, Instant expiresAt) {
 
   /** In-memory sessions with TTL and periodic cleanup. */
-  public static final class Store {
+  public static final class Store implements AutoCloseable {
     private final ConcurrentHashMap<UUID, ImportSession> sessions = new ConcurrentHashMap<>();
     private final Duration ttl;
     private final Clock clock;
+    private final ScheduledExecutorService cleaner;
 
     public Store() {
       this(Duration.ofSeconds(300), Clock.systemUTC());
@@ -29,7 +30,7 @@ public record ImportSession(
     public Store(Duration ttl, Clock clock) {
       this.ttl = ttl;
       this.clock = clock;
-      ScheduledExecutorService cleaner =
+      cleaner =
           Executors.newSingleThreadScheduledExecutor(
               runnable -> {
                 Thread thread = new Thread(runnable, "import-session-cleanup");
@@ -37,6 +38,11 @@ public record ImportSession(
                 return thread;
               });
       cleaner.scheduleAtFixedRate(this::purgeExpired, 60, 60, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void close() {
+      cleaner.shutdownNow();
     }
 
     public ImportSession create(long userId, long guildId, List<ParsedTrack> tracks) {
@@ -61,12 +67,17 @@ public record ImportSession(
     }
 
     public Optional<ImportSession> updateTracks(UUID id, List<ParsedTrack> tracks) {
-      return Optional.ofNullable(
-          sessions.computeIfPresent(
-              id,
-              (key, old) ->
-                  new ImportSession(old.id(), old.userId(), old.guildId(),
-                      List.copyOf(tracks), old.expiresAt())));
+      Instant now = clock.instant();
+      sessions.computeIfPresent(
+          id,
+          (key, old) -> {
+            if (!now.isBefore(old.expiresAt())) {
+              return null;
+            }
+            return new ImportSession(
+                old.id(), old.userId(), old.guildId(), List.copyOf(tracks), old.expiresAt());
+          });
+      return get(id);
     }
 
     public void remove(UUID id) {

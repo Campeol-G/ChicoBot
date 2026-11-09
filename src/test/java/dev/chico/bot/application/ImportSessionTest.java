@@ -88,11 +88,9 @@ class ImportSessionTest {
   }
 
   @Test
-  void updateExpiredStillReturnsPresent() {
-    // POR QUE: Store uses computeIfPresent without an expiry check, so an
-    // update after the TTL revives the entry. Pinned as-is (no production
-    // change): the preview buttons re-check get() before acting, and the
-    // cleaner purges stale entries every 60 s.
+  void updateExpiredReturnsEmpty() {
+    // POR QUE: an update past the TTL must not revive the entry — the
+    // preview buttons treat empty as "expired", same as get().
     MutableClock clock = new MutableClock(Instant.parse("2026-11-04T15:00:00Z"));
     ImportSession.Store store = new ImportSession.Store(Duration.ofSeconds(60), clock);
     ImportSession session = store.create(1L, 2L, List.of(track("Alpha")));
@@ -100,7 +98,8 @@ class ImportSessionTest {
 
     var updated = store.updateTracks(session.id(), List.of(track("Beta")));
 
-    assertTrue(updated.isPresent());
+    assertTrue(updated.isEmpty());
+    assertTrue(store.get(session.id()).isEmpty());
   }
 
   @Test

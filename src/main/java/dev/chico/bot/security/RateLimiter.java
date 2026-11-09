@@ -5,18 +5,23 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Cooldown per key with an injectable clock. */
+/** Cooldown per key with an injectable clock. Expired keys sweep themselves. */
 public final class RateLimiter {
 
-  private final Map<Object, Instant> lastUse = new HashMap<>();
+  private final Map<Object, Instant> expiries = new HashMap<>();
 
   public synchronized boolean tryAcquire(Object key, int cooldownSeconds, Clock clock) {
     Instant now = clock.instant();
-    Instant last = lastUse.get(key);
-    if (last != null && now.isBefore(last.plusSeconds(cooldownSeconds))) {
+    expiries.entrySet().removeIf(entry -> !now.isBefore(entry.getValue()));
+    Instant last = expiries.get(key);
+    if (last != null) {
       return false;
     }
-    lastUse.put(key, now);
+    expiries.put(key, now.plusSeconds(cooldownSeconds));
     return true;
+  }
+
+  int size() {
+    return expiries.size();
   }
 }
