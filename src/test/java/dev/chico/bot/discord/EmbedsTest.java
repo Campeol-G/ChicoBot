@@ -96,4 +96,21 @@ class EmbedsTest {
 
     assertTrue(embed.getDescription().contains("…and 5 more."), embed.getDescription());
   }
+
+  @Test
+  void previewFooterShowsSkippedImages() {
+    var embed =
+        Embeds.importPreview(
+            List.of(new dev.chico.bot.parser.ParsedTrack("raw", "A", "B", 90.0)), 30, 2);
+
+    assertTrue(embed.getFooter().getText().contains("Showing 1 of 30"), embed.getFooter().getText());
+    assertTrue(embed.getFooter().getText().contains("2 images skipped"), embed.getFooter().getText());
+  }
+
+  @Test
+  void cancelEmbedIsRedError() {
+    var embed = Embeds.error("Import cancelled — nothing was queued.");
+
+    assertEquals(java.awt.Color.RED, embed.getColor());
+  }
 }

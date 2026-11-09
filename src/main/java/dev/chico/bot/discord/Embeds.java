@@ -81,6 +81,12 @@ public final class Embeds {
   /** Preview of an image import. Every track name is escaped here. */
   public static MessageEmbed importPreview(
       List<dev.chico.bot.parser.ParsedTrack> tracks, int totalDetected) {
+    return importPreview(tracks, totalDetected, 0);
+  }
+
+  /** Preview of an image import with dropped-image count. Every track name is escaped here. */
+  public static MessageEmbed importPreview(
+      List<dev.chico.bot.parser.ParsedTrack> tracks, int totalDetected, int droppedImages) {
     EmbedBuilder builder = new EmbedBuilder().setTitle("Import preview").setColor(Color.BLUE);
     StringBuilder lines = new StringBuilder();
     for (int i = 0; i < tracks.size(); i++) {
@@ -93,11 +99,21 @@ public final class Embeds {
     }
     builder.setDescription(lines.toString().trim());
     if (totalDetected > tracks.size()) {
-      builder.setFooter("Showing " + tracks.size() + " of " + totalDetected + ".");
+      builder.setFooter(
+          "Showing " + tracks.size() + " of " + totalDetected + droppedSuffix(droppedImages));
+    } else if (droppedImages > 0) {
+      builder.setFooter(tracks.size() + " tracks" + droppedSuffix(droppedImages));
     } else {
       builder.setFooter(tracks.size() + " tracks.");
     }
     return builder.build();
+  }
+
+  private static String droppedSuffix(int droppedImages) {
+    if (droppedImages <= 0) {
+      return ".";
+    }
+    return ". (+" + droppedImages + " images skipped, max 5).";
   }
 
   public static MessageEmbed info(String message) {

@@ -91,7 +91,8 @@ public final class ImageContextMenu extends ListenerAdapter {
                     .getHook()
                     .sendMessage(
                         PreviewButtons.previewCreate(
-                            result.sessionId(), result.tracks(), result.totalDetected()))
+                            result.sessionId(), result.tracks(), result.totalDetected(),
+                            result.droppedImages()))
                     .queue())
         .exceptionally(
             failure -> {

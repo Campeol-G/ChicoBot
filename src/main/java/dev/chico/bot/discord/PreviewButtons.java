@@ -62,14 +62,26 @@ public final class PreviewButtons extends ListenerAdapter {
   /** Preview embed plus Play all / Cancel buttons and the remove select menu. */
   public static MessageEditData previewMessage(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
-    return previewEdit(sessionId, tracks, totalDetected);
+    return previewEdit(sessionId, tracks, totalDetected, 0);
+  }
+
+  /** Preview embed with dropped-image count. */
+  public static MessageEditData previewMessage(
+      UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
+    return previewEdit(sessionId, tracks, totalDetected, droppedImages);
   }
 
   /** Same preview as a fresh message (for the context menu flow). */
   public static MessageCreateData previewCreate(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
+    return previewCreate(sessionId, tracks, totalDetected, 0);
+  }
+
+  /** Same preview as a fresh message with dropped-image count. */
+  public static MessageCreateData previewCreate(
+      UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
     return new MessageCreateBuilder()
-        .setEmbeds(Embeds.importPreview(tracks, totalDetected))
+        .setEmbeds(Embeds.importPreview(tracks, totalDetected, droppedImages))
         .setComponents(previewComponents(sessionId, tracks))
         .setAllowedMentions(Collections.emptyList())
         .build();
@@ -115,7 +127,10 @@ public final class PreviewButtons extends ListenerAdapter {
       event
           .getHook()
           .editOriginal(
-              new MessageEditBuilder().setContent("Import cancelled, no tracks left.").build())
+              new MessageEditBuilder()
+                  .setEmbeds(Embeds.error("Import cancelled — nothing was queued."))
+                  .setComponents(Collections.emptyList())
+                  .build())
           .queue();
       return;
     }
@@ -124,7 +139,7 @@ public final class PreviewButtons extends ListenerAdapter {
     event
         .getHook()
         .editOriginal(
-            previewEdit(updated.id(), updated.tracks(), updated.tracks().size()))
+            previewEdit(updated.id(), updated.tracks(), updated.tracks().size(), 0))
         .queue();
   }
 
@@ -142,7 +157,11 @@ public final class PreviewButtons extends ListenerAdapter {
     event.deferEdit().queue();
     event
         .getHook()
-        .editOriginal(new MessageEditBuilder().setContent("Import cancelled.").build())
+        .editOriginal(
+            new MessageEditBuilder()
+                .setEmbeds(Embeds.error("Import cancelled — nothing was queued."))
+                .setComponents(Collections.emptyList())
+                .build())
         .queue();
   }
 
@@ -239,7 +258,26 @@ public final class PreviewButtons extends ListenerAdapter {
                     List<TrackCandidate> candidates =
                         playback.resolve(new OcrQuery(tracks.get(index))).get();
                     if (!candidates.isEmpty()) {
-                      found.put(index, candidates.get(0));
+                      TrackCandidate best = candidates.get(0);
+                      found.put(index, best);
+                      String query =
+                          tracks.get(index).title() + " " + tracks.get(index).artist();
+                      double score =
+                          new dev.chico.bot.source.Ranker(0.0).score(best, query.strip());
+                      log.info(
+                          "Play all resolving {}/{} query={} -> {} score={} source={}",
+                          index + 1,
+                          tracks.size(),
+                          query,
+                          best.title(),
+                          String.format("%.3f", score),
+                          best.source());
+                    } else {
+                      log.info(
+                          "Play all resolving {}/{} query={} -> not found",
+                          index + 1,
+                          tracks.size(),
+                          tracks.get(index).title() + " " + tracks.get(index).artist());
                     }
                   } finally {
                     resolveSlots.release();
@@ -317,9 +355,9 @@ public final class PreviewButtons extends ListenerAdapter {
   }
 
   private static net.dv8tion.jda.api.utils.messages.MessageEditData previewEdit(
-      UUID sessionId, List<ParsedTrack> tracks, int total) {
+      UUID sessionId, List<ParsedTrack> tracks, int total, int droppedImages) {
     return new MessageEditBuilder()
-        .setEmbeds(Embeds.importPreview(tracks, total))
+        .setEmbeds(Embeds.importPreview(tracks, total, droppedImages))
         .setComponents(previewComponents(sessionId, tracks))
         .setAllowedMentions(Collections.emptyList())
         .build();
