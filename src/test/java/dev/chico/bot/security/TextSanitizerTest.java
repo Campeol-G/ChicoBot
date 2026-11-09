@@ -49,4 +49,15 @@ class TextSanitizerTest {
     assertEquals("", TextSanitizer.escape(null));
     assertEquals("", TextSanitizer.escape("   "));
   }
+
+  @Test
+  void truncationKeepsSurrogatePairs() {
+    // 201 chars with the pair straddling the cut: naive substring splits it.
+    String result = TextSanitizer.escape("a".repeat(198) + "𝄞" + "b");
+
+    assertTrue(result.length() <= 201, "length was " + result.length());
+    assertTrue(
+        result.codePoints().noneMatch(cp -> cp >= 0xD800 && cp <= 0xDFFF),
+        "lone surrogate in: " + result);
+  }
 }

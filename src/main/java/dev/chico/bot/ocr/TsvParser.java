@@ -39,7 +39,7 @@ public final class TsvParser {
       int width = Integer.parseInt(columns[8].strip());
       int height = Integer.parseInt(columns[9].strip());
       float confidence = Float.parseFloat(columns[10].strip());
-      if (confidence < 0) {
+      if (!Float.isFinite(confidence) || confidence < 0) {
         return;
       }
       words.add(new OcrWord(text, left, top, width, height, confidence, block, paragraph, lineNumber));

@@ -42,4 +42,16 @@ class TsvParserTest {
     assertTrue(words.stream().noneMatch(word -> word.text().isEmpty()));
     assertTrue(words.stream().allMatch(word -> word.confidence() >= 0));
   }
+
+  @Test
+  void nanAndInfiniteConfidenceDropped() {
+    String rows =
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+            + "5\t1\t1\t1\t1\t1\t10\t20\t150\t60\tNaN\tGhost\n"
+            + "5\t1\t1\t1\t1\t2\t170\t20\t120\t60\tInfinity\tPhantom\n"
+            + "5\t1\t1\t1\t1\t3\t300\t20\t120\t60\t95.0\tReal\n";
+    List<OcrWord> words = TsvParser.parse(rows);
+
+    assertEquals(List.of("Real"), words.stream().map(OcrWord::text).toList());
+  }
 }

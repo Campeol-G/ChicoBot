@@ -74,8 +74,10 @@ public final class DefaultTrackResolver implements TrackResolver {
                               soundcloud -> rankedAboveThreshold(soundcloud, text))
                       : CompletableFuture.completedFuture(rankedAboveThreshold(youtube, text)));
     }
-    String text = ((TextQuery) query).text();
-    return resolveSearch(text).thenApply(candidates -> ranked(candidates, text));
+    if (query instanceof TextQuery text) {
+      return resolveSearch(text.text()).thenApply(candidates -> ranked(candidates, text.text()));
+    }
+    throw new IllegalArgumentException("unsupported query: " + query.getClass());
   }
 
   /**
