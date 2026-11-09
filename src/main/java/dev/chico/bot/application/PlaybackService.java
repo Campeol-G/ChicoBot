@@ -239,6 +239,9 @@ public final class PlaybackService {
     if (music == null) {
       return "The queue is empty.";
     }
+    if (target.isBlank()) {
+      return "No queued track matches that.";
+    }
     String trimmed = target.strip();
     try {
       if (Integer.parseInt(trimmed) == 1) {

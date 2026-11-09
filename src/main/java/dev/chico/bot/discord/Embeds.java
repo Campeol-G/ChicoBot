@@ -13,6 +13,7 @@ import net.dv8tion.jda.api.entities.MessageEmbed;
 public final class Embeds {
 
   private static final int MAX_QUEUE_LINES = 30;
+  private static final int MAX_DESCRIPTION = 4096;
 
   private Embeds() {
   }
@@ -67,7 +68,7 @@ public final class Embeds {
     if (queued.size() > shown) {
       lines.append("…and ").append(queued.size() - shown).append(" more.");
     }
-    builder.setDescription(lines.toString().trim());
+    builder.setDescription(truncate(lines.toString().trim()));
     return builder.build();
   }
 
@@ -97,7 +98,7 @@ public final class Embeds {
       }
       lines.append('\n');
     }
-    builder.setDescription(lines.toString().trim());
+    builder.setDescription(truncate(lines.toString().trim()));
     if (totalDetected > tracks.size()) {
       builder.setFooter(
           "Showing " + tracks.size() + " of " + totalDetected + droppedSuffix(droppedImages));
@@ -114,6 +115,18 @@ public final class Embeds {
       return ".";
     }
     return ". (+" + droppedImages + " images skipped, max 5).";
+  }
+
+  /** Cuts at the last line break so no track line is ever half-shown. */
+  private static String truncate(String text) {
+    if (text.length() <= MAX_DESCRIPTION) {
+      return text;
+    }
+    int cut = text.lastIndexOf('\n', MAX_DESCRIPTION - 1);
+    if (cut < 0) {
+      cut = MAX_DESCRIPTION - 1;
+    }
+    return text.substring(0, cut) + "…";
   }
 
   public static MessageEmbed info(String message) {

@@ -569,6 +569,26 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void blankRemoveRefusesWithoutMutating() {
+    SilentVoice voice = new SilentVoice();
+    PlaybackService service =
+        serviceWith(
+            voice,
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new ListResolver(List.of(candidate("Alpha"))));
+    service.play(1L, 2L, 3L, "alpha").join();
+    service.enqueueResolved(1L, List.of(candidate("Beta")));
+
+    String message = service.remove(1L, "   ");
+
+    assertEquals("No queued track matches that.", message);
+    assertEquals(
+        List.of("Beta"),
+        service.queueView(1L).queued().stream().map(TrackCandidate::title).toList());
+  }
+
+  @Test
   void pauseResumeStopLeaveOnEmpty() {
     PlaybackService service = service();
 

@@ -113,4 +113,26 @@ class EmbedsTest {
 
     assertEquals(java.awt.Color.RED, embed.getColor());
   }
+
+  @Test
+  void longQueueEmbedStaysWithinLimit() {
+    java.util.ArrayList<TrackCandidate> many = new java.util.ArrayList<>();
+    for (int i = 1; i <= 30; i++) {
+      many.add(candidate("T".repeat(200), "A".repeat(200), 200));
+    }
+    var embed = Embeds.queue(many);
+
+    assertTrue(embed.getDescription().length() <= 4096, "" + embed.getDescription().length());
+  }
+
+  @Test
+  void longPreviewEmbedStaysWithinLimit() {
+    java.util.ArrayList<dev.chico.bot.parser.ParsedTrack> many = new java.util.ArrayList<>();
+    for (int i = 1; i <= 25; i++) {
+      many.add(new dev.chico.bot.parser.ParsedTrack("raw", "T".repeat(200), "A".repeat(200), 90.0));
+    }
+    var embed = Embeds.importPreview(many, 25);
+
+    assertTrue(embed.getDescription().length() <= 4096, "" + embed.getDescription().length());
+  }
 }
