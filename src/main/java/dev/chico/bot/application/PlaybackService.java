@@ -196,8 +196,9 @@ public final class PlaybackService {
     if (music == null || music.player().getPlayingTrack() == null) {
       return "Nothing is playing.";
     }
-    music.player().stopTrack();
-    music.scheduler().queueView().clear();
+    synchronized (music) {
+      music.scheduler().stopAndClear();
+    }
     return "Stopped and cleared the queue.";
   }
 
@@ -223,10 +224,9 @@ public final class PlaybackService {
     if (index.isEmpty()) {
       return "No queued track matches that.";
     }
-    for (int i = 1; i < index.orElseThrow(); i++) {
-      music.scheduler().queueView().poll();
+    synchronized (music.scheduler()) {
+      music.scheduler().skipTo(index.orElseThrow() - 1);
     }
-    music.scheduler().nextTrack();
     return "Skipped.";
   }
 
@@ -247,19 +247,23 @@ public final class PlaybackService {
     if (index.isEmpty()) {
       return "No queued track matches that.";
     }
-    List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
-    TrackCandidate removed = queued.get(index.orElseThrow() - 1);
-    music.scheduler().queueView().removeAt(index.orElseThrow() - 1);
+    Optional<TrackCandidate> removed;
+    synchronized (music.scheduler()) {
+      removed = music.scheduler().removeAt(index.orElseThrow() - 1);
+    }
+    if (removed.isEmpty()) {
+      return "No queued track matches that.";
+    }
     int displayPosition = index.orElseThrow() + 1;
     try {
       int typed = Integer.parseInt(trimmed);
-      if (typed >= 2 && typed <= queued.size() + 1) {
+      if (typed >= 2 && typed <= music.scheduler().queueView().size() + 2) {
         displayPosition = typed;
       }
     } catch (NumberFormatException notANumber) {
       // Name match keeps index+1.
     }
-    return "Removed " + removed.title() + " (position " + displayPosition + ").";
+    return "Removed " + removed.orElseThrow().title() + " (position " + displayPosition + ").";
   }
 
   public QueueView queueView(long guildId) {
@@ -281,8 +285,9 @@ public final class PlaybackService {
   public String leave(long guildId) {
     GuildMusicManager music = managers.remove(guildId);
     if (music != null) {
-      music.player().stopTrack();
-      music.scheduler().queueView().clear();
+      synchronized (music) {
+        music.scheduler().stopAndClear();
+      }
     }
     connector.disconnect(guildId);
     return "Left the voice channel.";

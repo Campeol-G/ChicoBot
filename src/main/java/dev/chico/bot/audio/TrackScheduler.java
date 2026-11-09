@@ -64,6 +64,38 @@ public final class TrackScheduler extends AudioEventAdapter {
     current = pending;
   }
 
+  /**
+   * Drops the first {@code queueIndex} queued tracks and starts the next one,
+   * atomically against track-end events. Index is zero-based into the queue.
+   */
+  public synchronized Optional<TrackCandidate> skipTo(int queueIndex) {
+    for (int i = 0; i < queueIndex; i++) {
+      queue.poll();
+    }
+    nextTrack();
+    return current();
+  }
+
+  /**
+   * Removes one queued track atomically against track-end events. Index is
+   * zero-based into the queue.
+   */
+  public synchronized Optional<TrackCandidate> removeAt(int queueIndex) {
+    java.util.List<TrackCandidate> queued = queue.snapshot();
+    if (queueIndex < 0 || queueIndex >= queued.size()) {
+      return Optional.empty();
+    }
+    TrackCandidate removed = queued.get(queueIndex);
+    queue.removeAt(queueIndex);
+    return Optional.of(removed);
+  }
+
+  /** Stops playback and clears the queue atomically. */
+  public synchronized void stopAndClear() {
+    player.stopTrack();
+    queue.clear();
+  }
+
   public Optional<TrackCandidate> current() {
     return Optional.ofNullable(current);
   }

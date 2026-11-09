@@ -216,4 +216,30 @@ class TrackSchedulerTest {
 
     assertEquals("a", fix.scheduler().current().orElseThrow().title());
   }
+
+  @Test
+  void skipToJumpsToTarget() {
+    Fixture fix = fixture();
+
+    fix.scheduler().skipTo(0);
+
+    assertEquals("b", fix.scheduler().current().orElseThrow().title());
+  }
+
+  @Test
+  void removeAtReturnsRemovedTitle() {
+    Fixture fix = fixture();
+
+    assertEquals("b", fix.scheduler().removeAt(0).orElseThrow().title());
+    assertTrue(fix.scheduler().queueView().snapshot().isEmpty());
+  }
+
+  @Test
+  void stopAndClearEmptiesEverything() {
+    Fixture fix = fixture();
+
+    fix.scheduler().stopAndClear();
+
+    assertTrue(fix.scheduler().queueView().snapshot().isEmpty());
+  }
 }
