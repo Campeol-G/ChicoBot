@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -351,6 +352,15 @@ class DefaultTrackResolverTest {
     assertEquals("Direct", result.get(0).title());
     assertEquals(0, youtube.searches.get());
     assertEquals(0, soundcloud.searches.get());
+  }
+
+  @Test
+  void slugKeepsSLedArtistSegment() {
+    // "s" alone is too short to search (one-char words are dropped), but the
+    // artist segment must survive instead of vanishing like an unlisted token.
+    assertEquals(
+        Optional.of("club live set"),
+        DefaultTrackResolver.slugText(URI.create("https://soundcloud.com/s-club/live-set")));
   }
 
   @Test

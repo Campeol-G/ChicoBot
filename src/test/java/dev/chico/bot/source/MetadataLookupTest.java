@@ -23,6 +23,15 @@ class MetadataLookupTest {
       "artistName":"Rick Astley","trackName":"Never Gonna Give You Up"}]}
       """;
 
+  private static final String ITUNES_COLLECTION_FIRST_JSON =
+      """
+      {"resultCount":2,"results":[
+      {"wrapperType":"collection","collectionId":1559523357,
+      "artistName":"Rick Astley","collectionName":"Whenever You Need Somebody"},
+      {"wrapperType":"track","kind":"song","trackId":1559523359,
+      "artistName":"Rick Astley","trackName":"Never Gonna Give You Up"}]}
+      """;
+
   private HttpServer server;
   private MetadataLookup lookup;
 
@@ -36,7 +45,9 @@ class MetadataLookupTest {
           byte[] body =
               query != null && query.contains("id=1559523359")
                   ? ITUNES_JSON.getBytes(StandardCharsets.UTF_8)
-                  : "{\"resultCount\":0,\"results\":[]}".getBytes(StandardCharsets.UTF_8);
+                  : query != null && query.contains("id=777")
+                      ? ITUNES_COLLECTION_FIRST_JSON.getBytes(StandardCharsets.UTF_8)
+                      : "{\"resultCount\":0,\"results\":[]}".getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
           exchange.sendResponseHeaders(200, body.length);
           exchange.getResponseBody().write(body);
@@ -72,6 +83,18 @@ class MetadataLookupTest {
         new UrlQuery(
             Source.APPLE_MUSIC,
             URI.create("https://music.apple.com/us/song/never-gonna-give-you-up/1559523359"));
+
+    Optional<String> result = lookup.artistTitle(query).get();
+
+    assertEquals(Optional.of("Rick Astley - Never Gonna Give You Up"), result);
+  }
+
+  @Test
+  void collectionFirstStillResolvesSong() throws Exception {
+    UrlQuery query =
+        new UrlQuery(
+            Source.APPLE_MUSIC,
+            URI.create("https://music.apple.com/br/album/whatever/1559523357?i=777"));
 
     Optional<String> result = lookup.artistTitle(query).get();
 

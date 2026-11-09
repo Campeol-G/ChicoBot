@@ -66,11 +66,29 @@ public final class MetadataLookup {
     if (results.isEmpty()) {
       return Optional.empty();
     }
-    String artist = results.get(0).get("artistName").text();
-    String title = results.get(0).get("trackName").text();
-    if (artist == null || title == null || artist.isBlank() || title.isBlank()) {
+    // POR QUE: the lookup can return the album collection first (artistName
+    // plus collectionName, no trackName), so scan for the song entry.
+    JsonBrowser fallback = null;
+    for (JsonBrowser result : results) {
+      String artist = result.get("artistName").text();
+      String title = result.get("trackName").text();
+      if (artist == null || title == null || artist.isBlank() || title.isBlank()) {
+        continue;
+      }
+      if (fallback == null) {
+        fallback = result;
+      }
+      String wrapper = result.get("wrapperType").text();
+      String kind = result.get("kind").text();
+      if ("track".equals(wrapper) || "song".equals(kind)) {
+        return Optional.of(artist.strip() + " - " + title.strip());
+      }
+    }
+    if (fallback == null) {
       return Optional.empty();
     }
+    String artist = fallback.get("artistName").text();
+    String title = fallback.get("trackName").text();
     return Optional.of(artist.strip() + " - " + title.strip());
   }
 

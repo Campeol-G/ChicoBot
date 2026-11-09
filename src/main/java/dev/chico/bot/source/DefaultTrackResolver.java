@@ -168,13 +168,20 @@ public final class DefaultTrackResolver implements TrackResolver {
       return List.of();
     }
     List<String> segments = new java.util.ArrayList<>();
+    int position = 0;
     for (String segment : path.split("/")) {
-      String lowered = segment.toLowerCase(java.util.Locale.ROOT);
-      if (segment.isEmpty()
-          || SLUG_STOP_SEGMENTS.contains(lowered)
-          || lowered.startsWith("s-")) {
+      if (segment.isEmpty()) {
         continue;
       }
+      String lowered = segment.toLowerCase(java.util.Locale.ROOT);
+      // POR QUE: only the third segment carries the unlisted token (s-xxxx);
+      // artist slugs like s-club elsewhere are searchable text.
+      if (SLUG_STOP_SEGMENTS.contains(lowered)
+          || (position == 2 && lowered.startsWith("s-"))) {
+        position++;
+        continue;
+      }
+      position++;
       segments.add(segment);
     }
     if (lastSegmentOnly && !segments.isEmpty()) {
