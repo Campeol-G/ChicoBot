@@ -23,3 +23,6 @@ docs/test-plan.md
 
 # Process docs (specs/plans): kept locally, never pushed.
 docs/superpowers/
+
+# Session transcripts (process docs)
+session-*.md
