@@ -6,7 +6,7 @@ import dev.chico.bot.audio.AudioPlayerSendHandler;
 import java.util.function.Function;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.channel.concrete.VoiceChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
 import net.dv8tion.jda.api.managers.AudioManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +31,12 @@ public final class JdaVoiceConnector implements VoiceConnector {
       log.warn("voice join refused: unknown guild {}", guildId);
       return false;
     }
-    VoiceChannel channel = guild.getVoiceChannelById(voiceChannelId);
+    // POR QUE: voice and stage channels both carry audio; looking up only
+    // VoiceChannel refuses /play from Stage channels.
+    AudioChannel channel = guild.getVoiceChannelById(voiceChannelId);
+    if (channel == null) {
+      channel = guild.getStageChannelById(voiceChannelId);
+    }
     if (channel == null) {
       log.warn("voice join refused: unresolvable channel {} in guild {}", voiceChannelId, guildId);
       return false;
