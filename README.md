@@ -12,15 +12,16 @@ via Tesseract (`@bot` + image → preview → Play all).
 - `/play <name or link>`, `/pause`, `/resume`, `/skip [target]`, `/stop`,
   `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/ping`.
 - `@bot p <query>` in a channel works like `/play`.
-- Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 3 images):
+- Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 5 images):
   it reads the tracks with local OCR, shows a preview with **Play all**,
   **Remove items** and **Cancel** buttons, then queues the confirmed list
   in print order. Only the importer can confirm.
 - Message command **Play music from image** for screenshots in older messages.
 - Automatic fallback between YouTube and SoundCloud; per-source circuit
   breaker so a YouTube outage does not stall a 25-track import.
-- Links to Spotify / Apple Music tracks are accepted as metadata: the bot
-  reads the title and artist and searches YouTube / SoundCloud. Playlist
+- Links to Apple Music tracks are accepted as metadata: the bot
+  reads the title and artist and searches YouTube / SoundCloud. Spotify
+  links are refused (they need app credentials). Playlist
   links are refused (or reduced to one track); no playlist ever floods the queue.
 
 ## Requirements
@@ -95,12 +96,12 @@ Only `DISCORD_TOKEN` is required.
 | `OCR_MAX_CONCURRENCY` | `2` | Simultaneous OCR processes. |
 | `IMG_MAX_BYTES` | `8388608` | Max image size (8 MB). |
 | `IMG_MAX_PIXELS` | `16777216` | Max pixels (4096×4096). |
-| `IMPORT_MAX_TRACKS` | `25` | Tracks per import (select-menu limit). |
+| `IMPORT_MAX_TRACKS` | `50` | Tracks per import (remove menu shows the first 25). |
 | `IMPORT_SESSION_TTL_S` | `300` | Preview lifetime. |
 | `COOLDOWN_USER_S` | `15` | Seconds between imports per user. |
-| `QUEUE_MAX` | `200` | Max queued tracks per server. |
+| `QUEUE_MAX` | `50` | Max queued tracks per server. |
 | `IDLE_DISCONNECT_S` | `300` | Voice disconnect when idle. |
-| `MATCH_THRESHOLD` | `0.6` | Minimum score for an OCR-imported track (below → "not found"); `/play` text queries are never refused. Set `0.0` to disable. |
+| `MATCH_THRESHOLD` | `0.35` | Minimum score for an OCR-imported track (below → "not found"); `/play` text queries are never refused. Set `0.0` to disable. |
 | `RESOLVE_TIMEOUT_MS` | `8000` | Timeout per track resolution. |
 | `RESOLVE_CONCURRENCY` | `4` | Parallel resolutions on Play all. |
 | `SOURCE_FAILURE_THRESHOLD` | `3` | Consecutive failures before a source degrades. |
