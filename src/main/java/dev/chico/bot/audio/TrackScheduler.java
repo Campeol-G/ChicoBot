@@ -94,6 +94,8 @@ public final class TrackScheduler extends AudioEventAdapter {
   public synchronized void stopAndClear() {
     player.stopTrack();
     queue.clear();
+    current = null;
+    pending = null;
   }
 
   public Optional<TrackCandidate> current() {

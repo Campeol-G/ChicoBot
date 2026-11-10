@@ -244,6 +244,15 @@ class TrackSchedulerTest {
   }
 
   @Test
+  void stopAndClearClearsCurrent() {
+    Fixture fix = fixture();
+
+    fix.scheduler().stopAndClear();
+
+    assertTrue(fix.scheduler().current().isEmpty());
+  }
+
+  @Test
   void skipToAgainstConcurrentTrackEndStaysConsistent() throws Exception {
     // Best-effort guard: the race window needs a mid-sequence track end,
     // which no deterministic single-threaded test can stage. This pins that

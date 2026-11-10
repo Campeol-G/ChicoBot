@@ -21,7 +21,7 @@ public final class RateLimiter {
     return true;
   }
 
-  int size() {
+  synchronized int size() {
     return expiries.size();
   }
 }
