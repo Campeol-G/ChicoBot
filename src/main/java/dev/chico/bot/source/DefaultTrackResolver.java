@@ -44,16 +44,32 @@ public final class DefaultTrackResolver implements TrackResolver {
   private final Ranker ranker;
   private final CircuitBreaker breaker;
   private final Duration resolveTimeout;
+  private final boolean parallelSearch;
+
+  // Calibration: 0.3 lets a near-tie go to the provider's pick, while a clear
+  // text winner still wins (the "undressed" case).
+  private static final double TEXT_WEIGHT = 0.7;
+  private static final double RANK_WEIGHT = 0.3;
 
   public DefaultTrackResolver(
       Map<Source, TrackLoader> loaders,
       Ranker ranker,
       CircuitBreaker breaker,
       Duration resolveTimeout) {
+    this(loaders, ranker, breaker, resolveTimeout, true);
+  }
+
+  public DefaultTrackResolver(
+      Map<Source, TrackLoader> loaders,
+      Ranker ranker,
+      CircuitBreaker breaker,
+      Duration resolveTimeout,
+      boolean parallelSearch) {
     this.loaders = Map.copyOf(loaders);
     this.ranker = ranker;
     this.breaker = breaker;
     this.resolveTimeout = resolveTimeout;
+    this.parallelSearch = parallelSearch;
   }
 
   @Override
@@ -63,6 +79,10 @@ public final class DefaultTrackResolver implements TrackResolver {
     }
     if (query instanceof OcrQuery ocr) {
       String text = ocr.track().title() + " " + ocr.track().artist();
+      if (parallelSearch) {
+        // Both sources rank together; the threshold still decides.
+        return resolveSearch(text).thenApply(candidates -> rankedAboveThreshold(candidates, text));
+      }
       // YouTube results below the threshold do not count: SoundCloud still
       // gets its chance before the track becomes "not found".
       return searchSource(Source.YOUTUBE, text)
@@ -75,7 +95,7 @@ public final class DefaultTrackResolver implements TrackResolver {
                       : CompletableFuture.completedFuture(rankedAboveThreshold(youtube, text)));
     }
     if (query instanceof TextQuery text) {
-      return resolveSearch(text.text()).thenApply(candidates -> ranked(candidates, text.text()));
+      return resolveText(text.text());
     }
     throw new IllegalArgumentException("unsupported query: " + query.getClass());
   }
@@ -200,7 +220,43 @@ public final class DefaultTrackResolver implements TrackResolver {
     return words;
   }
 
+  /** Text queries blend provider rank into the text score (short-query fix). */
+  private CompletableFuture<List<TrackCandidate>> resolveText(String text) {
+    if (!parallelSearch) {
+      CompletableFuture<List<TrackCandidate>> youtube = searchSource(Source.YOUTUBE, text);
+      return youtube.thenCompose(
+          candidates -> {
+            if (!candidates.isEmpty()) {
+              return CompletableFuture.completedFuture(rankedText(candidates, List.of(), text));
+            }
+            return searchSource(Source.SOUNDCLOUD, text)
+                .thenApply(soundcloud -> rankedText(soundcloud, List.of(), text));
+          });
+    }
+    return searchBoth(text)
+        .thenApply(lists -> rankedText(lists.youtube(), lists.soundcloud(), text));
+  }
+
+  private record SearchLists(List<TrackCandidate> youtube, List<TrackCandidate> soundcloud) {
+  }
+
+  private record ScoredEntry(TrackCandidate candidate, int index, double blended) {
+  }
+
+  private CompletableFuture<SearchLists> searchBoth(String text) {
+    return searchSource(Source.YOUTUBE, text)
+        .thenCombine(searchSource(Source.SOUNDCLOUD, text), SearchLists::new);
+  }
+
   private CompletableFuture<List<TrackCandidate>> resolveSearch(String text) {
+    if (!parallelSearch) {
+      return resolveSearchSequential(text);
+    }
+    return searchBoth(text).thenApply(lists -> concat(lists.youtube(), lists.soundcloud()));
+  }
+
+  /** v1 behavior: YouTube first, SoundCloud only when YouTube has nothing. */
+  private CompletableFuture<List<TrackCandidate>> resolveSearchSequential(String text) {
     CompletableFuture<List<TrackCandidate>> youtube = searchSource(Source.YOUTUBE, text);
     return youtube.thenCompose(
         candidates -> {
@@ -209,6 +265,56 @@ public final class DefaultTrackResolver implements TrackResolver {
           }
           return searchSource(Source.SOUNDCLOUD, text);
         });
+  }
+
+  private static List<TrackCandidate> concat(
+      List<TrackCandidate> first, List<TrackCandidate> second) {
+    if (first.isEmpty()) {
+      return second;
+    }
+    if (second.isEmpty()) {
+      return first;
+    }
+    List<TrackCandidate> merged = new java.util.ArrayList<>(first.size() + second.size());
+    merged.addAll(first);
+    merged.addAll(second);
+    return merged;
+  }
+
+  /** Blended text + provider-rank order, duplicate titles merged. */
+  private List<TrackCandidate> rankedText(
+      List<TrackCandidate> youtube, List<TrackCandidate> soundcloud, String text) {
+    List<ScoredEntry> entries = new java.util.ArrayList<>();
+    addEntries(entries, youtube, text);
+    addEntries(entries, soundcloud, text);
+    java.util.Map<String, ScoredEntry> byKey = new java.util.LinkedHashMap<>();
+    for (ScoredEntry entry : entries) {
+      String key =
+          Ranker.normalize(entry.candidate().title() + " " + entry.candidate().artist());
+      byKey.merge(
+          key, entry, (left, right) -> right.blended() > left.blended() ? right : left);
+    }
+    return byKey.values().stream()
+        .sorted(
+            Comparator.comparingDouble(ScoredEntry::blended)
+                .reversed()
+                .thenComparingInt(ScoredEntry::index)
+                .thenComparingLong(
+                    entry ->
+                        entry.candidate().duration() == null
+                            ? Long.MAX_VALUE
+                            : entry.candidate().duration().getSeconds()))
+        .map(ScoredEntry::candidate)
+        .toList();
+  }
+
+  private void addEntries(List<ScoredEntry> entries, List<TrackCandidate> list, String text) {
+    for (int i = 0; i < list.size(); i++) {
+      TrackCandidate candidate = list.get(i);
+      double blended =
+          TEXT_WEIGHT * ranker.score(candidate, text) + RANK_WEIGHT * (1.0 / (1 + i));
+      entries.add(new ScoredEntry(candidate, i, blended));
+    }
   }
 
   private CompletableFuture<List<TrackCandidate>> searchSource(Source source, String text) {
@@ -232,15 +338,5 @@ public final class DefaultTrackResolver implements TrackResolver {
 
   private <T> CompletableFuture<T> withTimeout(CompletableFuture<T> future) {
     return future.orTimeout(resolveTimeout.toMillis(), TimeUnit.MILLISECONDS);
-  }
-
-  private List<TrackCandidate> ranked(List<TrackCandidate> candidates, String text) {
-    return candidates.stream()
-        .sorted(
-            Comparator.comparingDouble((TrackCandidate c) -> ranker.score(c, text))
-                .reversed()
-                .thenComparing(
-                    c -> c.duration() == null ? Long.MAX_VALUE : c.duration().getSeconds()))
-        .toList();
   }
 }

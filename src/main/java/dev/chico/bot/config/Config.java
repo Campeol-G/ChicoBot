@@ -112,6 +112,18 @@ public final class Config {
     return parseDouble("MATCH_THRESHOLD", 0.35);
   }
 
+  /** Simultaneous YouTube + SoundCloud search; false keeps the v1 sequence. */
+  public boolean parallelSearch() {
+    String raw = env.getOrDefault("PARALLEL_SEARCH", "true").strip();
+    if (raw.isEmpty() || raw.equalsIgnoreCase("true")) {
+      return true;
+    }
+    if (raw.equalsIgnoreCase("false")) {
+      return false;
+    }
+    throw new IllegalArgumentException("bad config PARALLEL_SEARCH: must be true or false");
+  }
+
   public String logLevel() {
     return env.getOrDefault("LOG_LEVEL", "INFO");
   }
@@ -145,6 +157,7 @@ public final class Config {
     if (!(threshold >= 0.0) || !(threshold <= 1.0)) {
       throw new IllegalArgumentException("bad config MATCH_THRESHOLD: must be within 0.0..1.0");
     }
+    parallelSearch();
     if (ytCipherUrl().isPresent() && ytCipherPassword().isBlank()) {
       throw new IllegalArgumentException(
           "bad config YT_CIPHER_PASSWORD: required when YT_CIPHER_URL is set");

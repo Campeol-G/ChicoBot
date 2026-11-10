@@ -91,7 +91,21 @@ class DefaultTrackResolverTest {
         loaders,
         new Ranker(0.0),
         new CircuitBreaker(failureThreshold, Duration.ofMinutes(5), Clock.systemUTC()),
-        timeout);
+        timeout,
+        false);
+  }
+
+  private static DefaultTrackResolver parallelResolver(
+      FakeLoader youtube, FakeLoader soundcloud, Duration timeout, int failureThreshold) {
+    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
+    loaders.put(Source.YOUTUBE, youtube);
+    loaders.put(Source.SOUNDCLOUD, soundcloud);
+    return new DefaultTrackResolver(
+        loaders,
+        new Ranker(0.0),
+        new CircuitBreaker(failureThreshold, Duration.ofMinutes(5), Clock.systemUTC()),
+        timeout,
+        true);
   }
 
   @Test
@@ -406,7 +420,8 @@ class DefaultTrackResolverTest {
         loaders,
         new Ranker(threshold),
         new CircuitBreaker(3, Duration.ofMinutes(5), Clock.systemUTC()),
-        Duration.ofSeconds(5));
+        Duration.ofSeconds(5),
+        false);
   }
 
   @Test
@@ -552,5 +567,101 @@ class DefaultTrackResolverTest {
 
     assertEquals(2, result.size());
     assertEquals(6 * 60 + 5, result.get(0).duration().getSeconds());
+  }
+
+  @Test
+  void parallelTextSearchQueriesBothSources() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Unrelated Video", "Nobody"));
+    soundcloud.searchResult =
+        List.of(candidate(Source.SOUNDCLOUD, "Azul da Cor do Mar", "Tim Maia"));
+    DefaultTrackResolver resolver =
+        parallelResolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver.resolve(new TextQuery("Tim Maia - Azul da Cor do Mar")).get();
+
+    assertEquals(1, youtube.searches.get());
+    assertEquals(1, soundcloud.searches.get());
+    assertEquals("Azul da Cor do Mar", result.get(0).title());
+  }
+
+  @Test
+  void parallelOcrSearchesBothEvenWhenYoutubePasses() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Gone Are The Days", "Nujabes"));
+    soundcloud.searchResult = List.of();
+    DefaultTrackResolver resolver =
+        parallelResolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new OcrQuery(
+                    new dev.chico.bot.parser.ParsedTrack(
+                        "raw", "Gone Are The Days", "Nujabes", 90.0)))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals(1, youtube.searches.get());
+    assertEquals(1, soundcloud.searches.get());
+  }
+
+  @Test
+  void blendLetsProviderTopBeatSlightlyCloserText() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(
+            candidate(Source.YOUTUBE, "Undressed (Official Audio)", "Sombr"),
+            candidate(Source.YOUTUBE, "Undressed", "Some Cover"));
+    DefaultTrackResolver resolver =
+        parallelResolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result = resolver.resolve(new TextQuery("undressed")).get();
+
+    assertEquals("Undressed (Official Audio)", result.get(0).title());
+  }
+
+  @Test
+  void blendKeepsClearTextWinnerEvenFromRankFive() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    java.util.List<TrackCandidate> list = new java.util.ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      list.add(candidate(Source.YOUTUBE, "Something Else " + i, "Nobody"));
+    }
+    list.add(candidate(Source.YOUTUBE, "Undressed", "Sombr"));
+    youtube.searchResult = list;
+    DefaultTrackResolver resolver =
+        parallelResolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result = resolver.resolve(new TextQuery("undressed sombr")).get();
+
+    assertEquals("Undressed", result.get(0).title());
+  }
+
+  @Test
+  void blendMergesCrossSourceDuplicates() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.searchResult =
+        List.of(
+            candidate(Source.YOUTUBE, "Song", "Artist"),
+            candidate(Source.YOUTUBE, "Other", "Someone"));
+    soundcloud.searchResult =
+        List.of(
+            candidate(Source.SOUNDCLOUD, "Song", "Artist"),
+            candidate(Source.SOUNDCLOUD, "Other", "Someone"));
+    DefaultTrackResolver resolver =
+        parallelResolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result = resolver.resolve(new TextQuery("song artist")).get();
+
+    assertEquals(2, result.size());
   }
 }

@@ -102,6 +102,7 @@ Only `DISCORD_TOKEN` is required.
 | `QUEUE_MAX` | `50` | Max queued tracks per server. |
 | `IDLE_DISCONNECT_S` | `300` | Voice disconnect when idle. |
 | `MATCH_THRESHOLD` | `0.35` | Minimum score for an OCR-imported track (below → "not found"); `/play` text queries are never refused. Set `0.0` to disable. |
+| `PARALLEL_SEARCH` | `true` | Search YouTube and SoundCloud at the same time and pick the best-ranked result. Set `false` for the v1 sequential path (YouTube first). |
 | `RESOLVE_TIMEOUT_MS` | `8000` | Timeout per track resolution. |
 | `RESOLVE_CONCURRENCY` | `4` | Parallel resolutions on Play all. |
 | `SOURCE_FAILURE_THRESHOLD` | `3` | Consecutive failures before a source degrades. |

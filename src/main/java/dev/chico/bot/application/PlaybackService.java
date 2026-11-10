@@ -95,7 +95,8 @@ public final class PlaybackService {
                 config.sourceFailureThreshold(),
                 Duration.ofSeconds(config.sourceDegradedCooldownS()),
                 clock),
-            resolveTimeout);
+            resolveTimeout,
+            config.parallelSearch());
     this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
   }
 

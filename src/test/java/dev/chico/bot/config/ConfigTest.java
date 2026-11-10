@@ -1,6 +1,7 @@
 package dev.chico.bot.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +32,29 @@ class ConfigTest {
     assertEquals(50, config.queueMax());
     assertEquals(50, config.importMaxTracks());
     assertEquals(0.35, config.matchThreshold());
+  }
+
+  @Test
+  void parallelSearchDefaultsOn() {
+    Config config = new Config(envWithToken());
+    assertTrue(config.parallelSearch());
+  }
+
+  @Test
+  void parallelSearchCanBeDisabled() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "PARALLEL_SEARCH", "false"));
+    assertFalse(config.parallelSearch());
+  }
+
+  @Test
+  void parallelSearchRejectsInvalidValue() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "PARALLEL_SEARCH", "yes")));
   }
 
   @Test
