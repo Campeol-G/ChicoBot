@@ -138,8 +138,13 @@ public final class PlaybackService {
    * playable track. Returns how many were accepted before the queue filled.
    */
   public int enqueueResolved(long guildId, List<TrackCandidate> candidates) {
+    return enqueueResolved(guildId, candidates, 0L);
+  }
+
+  /** Same, attributing every accepted item to {@code addedBy}. */
+  public int enqueueResolved(long guildId, List<TrackCandidate> candidates, long addedBy) {
     return musicManager(guildId)
-        .enqueueAll(candidates.stream().map(PlaybackService::cloneOf).toList());
+        .enqueueAll(candidates.stream().map(PlaybackService::cloneOf).toList(), addedBy);
   }
 
   /** Resolves the input, enqueues the best candidate and reports what happened. */
@@ -152,7 +157,7 @@ public final class PlaybackService {
     UrlDecision decision = TrackUrlPolicy.classify(input);
     if (decision instanceof UrlDecision.Rejected rejected) {
       if (rejected.reason() == UrlDecision.Reason.INVALID) {
-        return playQuery(guildId, voiceChannelId, new TextQuery(input));
+        return playQuery(guildId, voiceChannelId, userId, new TextQuery(input));
       }
       return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
@@ -166,7 +171,7 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
     }
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
-      return playQuery(guildId, voiceChannelId, query)
+      return playQuery(guildId, voiceChannelId, userId, query)
           .thenApply(
               result -> {
                 if (!result.queued() && accepted.source() == Source.SOUNDCLOUD) {
@@ -182,7 +187,7 @@ public final class PlaybackService {
         .thenCompose(
             text ->
                 text.map(
-                        found -> playQuery(guildId, voiceChannelId, new TextQuery(found)))
+                        found -> playQuery(guildId, voiceChannelId, userId, new TextQuery(found)))
                     .orElseGet(
                         () ->
                             CompletableFuture.completedFuture(
@@ -347,7 +352,7 @@ public final class PlaybackService {
   }
 
   private CompletableFuture<PlayResult> playQuery(
-      long guildId, long voiceChannelId, PlayQuery query) {
+      long guildId, long voiceChannelId, long userId, PlayQuery query) {
     return resolver
         .resolve(query)
         .thenApply(
@@ -360,7 +365,7 @@ public final class PlaybackService {
                 return refused("Could not join that voice channel.");
               }
               TrackCandidate clone = cloneOf(best);
-              int accepted = musicManager(guildId).enqueueAll(List.of(clone));
+              int accepted = musicManager(guildId).enqueueAll(List.of(clone), userId);
               if (accepted == 0) {
                 return refused("The queue is full.");
               }

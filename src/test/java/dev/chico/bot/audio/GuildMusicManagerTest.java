@@ -1,6 +1,7 @@
 package dev.chico.bot.audio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
@@ -264,6 +265,30 @@ class GuildMusicManagerTest {
 
     assertEquals(3, accepted);
     assertEquals(2, manager.scheduler().queueView().size());
+  }
+
+  @Test
+  void enqueueAssignsUniqueIdentityAndOwner() {
+    GuildMusicManager manager = manager(200);
+
+    manager.enqueueAll(List.of(candidate("a"), candidate("b")), 42L);
+
+    TrackCandidate current = manager.scheduler().current().orElseThrow();
+    TrackCandidate queued = manager.scheduler().queueView().snapshot().get(0);
+    assertEquals(42L, current.addedBy());
+    assertEquals(42L, queued.addedBy());
+    assertTrue(current.itemId() > 0);
+    assertTrue(queued.itemId() > 0);
+    assertNotEquals(current.itemId(), queued.itemId());
+  }
+
+  @Test
+  void enqueueWithoutOwnerKeepsLegacyUnknown() {
+    GuildMusicManager manager = manager(200);
+
+    manager.enqueueAll(List.of(candidate("a")));
+
+    assertEquals(0L, manager.scheduler().current().orElseThrow().addedBy());
   }
 
   @Test

@@ -352,7 +352,9 @@ public final class PreviewButtons extends ListenerAdapter {
                   if (!playback.connect(guildId, voiceChannel.getIdLong())) {
                     joinFailed = true;
                   } else {
-                    enqueued = playback.enqueueResolved(guildId, ordered);
+                    enqueued =
+                        playback.enqueueResolved(
+                            guildId, ordered, event.getUser().getIdLong());
                   }
                 }
               } catch (Exception e) {
