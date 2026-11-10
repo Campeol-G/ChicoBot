@@ -15,6 +15,7 @@ import dev.chico.bot.source.PatchedTvClient;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Ranker;
 import dev.chico.bot.source.Source;
+import dev.chico.bot.source.SpotifyClient;
 import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackLoader;
@@ -97,7 +98,14 @@ public final class PlaybackService {
                 clock),
             resolveTimeout,
             config.parallelSearch());
-    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
+    SpotifyClient spotify =
+        config.spotifyClientId().isPresent()
+            ? new SpotifyClient(
+                config.spotifyClientId().orElseThrow(),
+                config.spotifyClientSecret().orElseThrow(),
+                resolveTimeout)
+            : null;
+    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify);
   }
 
   PlaybackService(
@@ -154,6 +162,9 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused("Playlists are not supported yet."));
     }
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
+    if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
+      return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
+    }
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
       return playQuery(guildId, voiceChannelId, query)
           .thenApply(

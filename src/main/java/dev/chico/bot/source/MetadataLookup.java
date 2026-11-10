@@ -12,27 +12,55 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Reads track metadata from links that carry no audio. Apple Music uses the
- * public iTunes lookup; Spotify needs app credentials and resolves later.
+ * public iTunes lookup; Spotify uses the Web API when credentials are set.
  */
 public final class MetadataLookup {
 
   private final HttpClient http;
   private final URI itunesLookup;
   private final Duration timeout;
+  private final SpotifyClient spotify;
 
   public MetadataLookup(URI itunesLookup, Duration timeout) {
     this(HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
-        itunesLookup, timeout);
+        itunesLookup, timeout, null);
+  }
+
+  public MetadataLookup(URI itunesLookup, Duration timeout, SpotifyClient spotify) {
+    this(HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        itunesLookup, timeout, spotify);
   }
 
   MetadataLookup(HttpClient http, URI itunesLookup, Duration timeout) {
+    this(http, itunesLookup, timeout, null);
+  }
+
+  MetadataLookup(
+      HttpClient http, URI itunesLookup, Duration timeout, SpotifyClient spotify) {
     this.http = http;
     this.itunesLookup = itunesLookup;
     this.timeout = timeout;
+    this.spotify = spotify;
+  }
+
+  public boolean spotifyEnabled() {
+    return spotify != null;
   }
 
   /** Resolves a metadata-only link to "artist - title" for text search. */
   public CompletableFuture<Optional<String>> artistTitle(UrlQuery query) {
+    if (query.source() == Source.SPOTIFY) {
+      if (spotify == null) {
+        return CompletableFuture.completedFuture(Optional.empty());
+      }
+      return spotify
+          .resolve(query.uri())
+          .thenApply(
+              content ->
+                  content.kind() == SpotifyClient.Kind.TRACK && !content.tracks().isEmpty()
+                      ? Optional.of(content.tracks().get(0))
+                      : Optional.empty());
+    }
     if (query.source() != Source.APPLE_MUSIC) {
       return CompletableFuture.completedFuture(Optional.empty());
     }

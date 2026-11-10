@@ -311,7 +311,7 @@ class PlaybackServiceTest {
   }
 
   @Test
-  void soundcloudSetRefusalOmitsYoutubeHint() {
+  void playlistLinksNeverLoadAsSingleTracks() {
     PlaybackService.PlayResult youtube =
         service()
             .play(1L, 2L, 3L, "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLx")
@@ -321,9 +321,10 @@ class PlaybackServiceTest {
             .play(1L, 2L, 3L, "https://soundcloud.com/artist/sets/name")
             .join();
 
-    assertTrue(youtube.message().contains("&list="));
+    assertFalse(youtube.queued());
+    assertFalse(soundcloud.queued());
+    assertTrue(youtube.message().contains("Playlists are not supported"));
     assertTrue(soundcloud.message().contains("Playlists are not supported"));
-    assertTrue(!soundcloud.message().contains("&list="));
   }
 
   @Test

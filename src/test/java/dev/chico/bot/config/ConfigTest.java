@@ -58,6 +58,31 @@ class ConfigTest {
   }
 
   @Test
+  void spotifyRequiresBothCredentials() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "SPOTIFY_CLIENT_ID", "id")));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "SPOTIFY_CLIENT_SECRET", "secret")));
+  }
+
+  @Test
+  void spotifyAcceptedWhenBothCredentialsSet() {
+    Config config = new Config(Map.of(
+        "DISCORD_TOKEN", "test-token-placeholder",
+        "SPOTIFY_CLIENT_ID", "id",
+        "SPOTIFY_CLIENT_SECRET", "secret"));
+
+    assertEquals("id", config.spotifyClientId().orElseThrow());
+    assertEquals("secret", config.spotifyClientSecret().orElseThrow());
+  }
+
+  @Test
   void envOverridesDefaults() {
     Config config = new Config(Map.of(
         "DISCORD_TOKEN", "test-token-placeholder",
