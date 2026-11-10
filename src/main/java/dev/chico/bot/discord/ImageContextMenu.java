@@ -4,14 +4,11 @@ import dev.chico.bot.application.AttachmentInput;
 import dev.chico.bot.application.ImportFromImage;
 import dev.chico.bot.config.Config;
 import dev.chico.bot.security.RateLimiter;
-import java.net.URI;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.events.interaction.command.MessageContextInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
@@ -55,28 +52,8 @@ public final class ImageContextMenu extends ListenerAdapter {
           .queue();
       return;
     }
-    List<AttachmentInput> inputs = new ArrayList<>();
-    // POR QUE: no local limit here — ImportFromImage caps at 5 and counts the
-    // rest as droppedImages for the preview footer. Truncating here would make
-    // the dropped count unreachable (always 0).
-    for (Message.Attachment attachment
-        : event.getTarget().getAttachments().stream()
-            .filter(Message.Attachment::isImage)
-            .toList()) {
-      URI uri;
-      try {
-        uri = new URI(attachment.getUrl());
-      } catch (Exception e) {
-        continue;
-      }
-      inputs.add(
-          new AttachmentInput(
-              uri,
-              attachment.getContentType(),
-              attachment.getSize(),
-              attachment.getWidth(),
-              attachment.getHeight()));
-    }
+    List<AttachmentInput> inputs =
+        AttachmentInputs.fromAttachments(event.getTarget().getAttachments());
     if (inputs.isEmpty()) {
       event
           .getHook()

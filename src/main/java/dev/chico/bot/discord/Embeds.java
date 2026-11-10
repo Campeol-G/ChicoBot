@@ -33,20 +33,6 @@ public final class Embeds {
     return builder.build();
   }
 
-  public static MessageEmbed addedToQueue(TrackCandidate candidate, int position) {
-    String title = TextSanitizer.escape(candidate.title());
-    EmbedBuilder builder = new EmbedBuilder();
-    if (candidate.uri() != null) {
-      builder.setTitle(title, candidate.uri().toString());
-    } else {
-      builder.setTitle(title);
-    }
-    builder.setAuthor(TextSanitizer.escape(candidate.artist()));
-    builder.setDescription("Added to queue at position " + position + ".");
-    builder.setColor(Color.BLUE);
-    return builder.build();
-  }
-
   public static MessageEmbed queue(List<TrackCandidate> queued) {
     EmbedBuilder builder = new EmbedBuilder().setTitle("Queue").setColor(Color.BLUE);
     if (queued.isEmpty()) {

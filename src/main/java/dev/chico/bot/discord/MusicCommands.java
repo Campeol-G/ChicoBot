@@ -3,6 +3,7 @@ package dev.chico.bot.discord;
 import dev.chico.bot.application.PlaybackService;
 import dev.chico.bot.application.PlaybackService.PlayResult;
 import dev.chico.bot.application.PlaybackService.QueueView;
+import java.util.List;
 import java.util.Optional;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.channel.unions.AudioChannelUnion;
@@ -35,52 +36,33 @@ public final class MusicCommands extends ListenerAdapter {
     this.playback = playback;
   }
 
+  /** One list, registered per guild in dev and globally otherwise. */
+  private static List<net.dv8tion.jda.api.interactions.commands.build.CommandData> commandData() {
+    return List.of(
+        Commands.slash(PLAY, "Play a song by name or link")
+            .addOption(OptionType.STRING, "query", "Song name or audio URL", true),
+        Commands.slash(PAUSE, "Pause the current track"),
+        Commands.slash(RESUME, "Resume the current track"),
+        Commands.slash(SKIP, "Skip the current track or jump to a queued one")
+            .addOption(OptionType.STRING, "target", "Queue number or name", false),
+        Commands.slash(STOP, "Stop and clear the queue"),
+        Commands.slash(QUEUE, "Show the queue"),
+        Commands.slash(REMOVE, "Remove a queued track")
+            .addOption(OptionType.STRING, "target", "Queue number or name", true),
+        Commands.slash(LEAVE, "Leave the voice channel"),
+        Commands.slash(NOW_PLAYING, "Show the current track"));
+  }
+
   static void register(Guild guild) {
-    guild
-        .upsertCommand(
-            Commands.slash(PLAY, "Play a song by name or link")
-                .addOption(OptionType.STRING, "query", "Song name or audio URL", true))
-        .queue();
-    guild.upsertCommand(Commands.slash(PAUSE, "Pause the current track")).queue();
-    guild.upsertCommand(Commands.slash(RESUME, "Resume the current track")).queue();
-    guild
-        .upsertCommand(
-            Commands.slash(SKIP, "Skip the current track or jump to a queued one")
-                .addOption(OptionType.STRING, "target", "Queue number or name", false))
-        .queue();
-    guild.upsertCommand(Commands.slash(STOP, "Stop and clear the queue")).queue();
-    guild.upsertCommand(Commands.slash(QUEUE, "Show the queue")).queue();
-    guild
-        .upsertCommand(
-            Commands.slash(REMOVE, "Remove a queued track")
-                .addOption(OptionType.STRING, "target", "Queue number or name", true))
-        .queue();
-    guild.upsertCommand(Commands.slash(LEAVE, "Leave the voice channel")).queue();
-    guild.upsertCommand(Commands.slash(NOW_PLAYING, "Show the current track")).queue();
+    for (var command : commandData()) {
+      guild.upsertCommand(command).queue();
+    }
   }
 
   static void registerGlobal(net.dv8tion.jda.api.JDA jda) {
-    jda
-        .upsertCommand(
-            Commands.slash(PLAY, "Play a song by name or link")
-                .addOption(OptionType.STRING, "query", "Song name or audio URL", true))
-        .queue();
-    jda.upsertCommand(Commands.slash(PAUSE, "Pause the current track")).queue();
-    jda.upsertCommand(Commands.slash(RESUME, "Resume the current track")).queue();
-    jda
-        .upsertCommand(
-            Commands.slash(SKIP, "Skip the current track or jump to a queued one")
-                .addOption(OptionType.STRING, "target", "Queue number or name", false))
-        .queue();
-    jda.upsertCommand(Commands.slash(STOP, "Stop and clear the queue")).queue();
-    jda.upsertCommand(Commands.slash(QUEUE, "Show the queue")).queue();
-    jda
-        .upsertCommand(
-            Commands.slash(REMOVE, "Remove a queued track")
-                .addOption(OptionType.STRING, "target", "Queue number or name", true))
-        .queue();
-    jda.upsertCommand(Commands.slash(LEAVE, "Leave the voice channel")).queue();
-    jda.upsertCommand(Commands.slash(NOW_PLAYING, "Show the current track")).queue();
+    for (var command : commandData()) {
+      jda.upsertCommand(command).queue();
+    }
   }
 
   @Override

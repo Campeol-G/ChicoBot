@@ -5,9 +5,7 @@ import dev.chico.bot.application.ImportFromImage;
 import dev.chico.bot.application.PlaybackService;
 import dev.chico.bot.config.Config;
 import dev.chico.bot.security.RateLimiter;
-import java.net.URI;
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import net.dv8tion.jda.api.entities.Message;
@@ -54,7 +52,7 @@ public final class MessageListener extends ListenerAdapter {
     if (text.equals("p") || text.startsWith("p ")) {
       onPlayQuery(event, text.length() > 1 ? text.substring(2).strip() : "");
     } else if (!images.isEmpty()) {
-      onImport(event, images);
+      onImport(event);
     } else if (!text.isEmpty()) {
       event
           .getMessage()
@@ -105,7 +103,7 @@ public final class MessageListener extends ListenerAdapter {
             });
   }
 
-  private void onImport(MessageReceivedEvent event, List<Message.Attachment> images) {
+  private void onImport(MessageReceivedEvent event) {
     long userId = event.getAuthor().getIdLong();
     if (!rateLimiter.tryAcquire("import:" + userId, cooldownUserS, clock)) {
       event
@@ -115,25 +113,8 @@ public final class MessageListener extends ListenerAdapter {
           .queue();
       return;
     }
-    List<AttachmentInput> inputs = new ArrayList<>();
-    // POR QUE: no local limit here — ImportFromImage caps at 5 and counts the
-    // rest as droppedImages for the preview footer. Truncating here would make
-    // the dropped count unreachable (always 0).
-    for (Message.Attachment attachment : images) {
-      URI uri;
-      try {
-        uri = new URI(attachment.getUrl());
-      } catch (Exception e) {
-        continue;
-      }
-      inputs.add(
-          new AttachmentInput(
-              uri,
-              attachment.getContentType(),
-              attachment.getSize(),
-              attachment.getWidth(),
-              attachment.getHeight()));
-    }
+    List<AttachmentInput> inputs =
+        AttachmentInputs.fromAttachments(event.getMessage().getAttachments());
     for (AttachmentInput input : inputs) {
       log.debug(
           "import request contentType={} size={} dims={}x{}",
