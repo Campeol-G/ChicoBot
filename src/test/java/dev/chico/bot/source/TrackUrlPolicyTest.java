@@ -1,6 +1,7 @@
 package dev.chico.bot.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,6 +15,12 @@ class TrackUrlPolicyTest {
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
     assertEquals(expected, accepted.source());
     assertTrue(accepted.uri().toString().startsWith("https://"));
+  }
+
+  private static UrlDecision.Accepted accepted(String input) {
+    UrlDecision decision = TrackUrlPolicy.classify(input);
+    assertInstanceOf(UrlDecision.Accepted.class, decision, "expected Accepted for " + input);
+    return (UrlDecision.Accepted) decision;
   }
 
   private static void assertRejected(String input, UrlDecision.Reason expected) {
@@ -51,22 +58,48 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void youtubeWatchWithPlaylistParamRejected() {
-    assertRejected(
-        "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLxxxx",
-        UrlDecision.Reason.PLAYLIST);
+  void youtubeWatchWithPlaylistParamAcceptedWithTrackFallback() {
+    UrlDecision.Accepted accepted =
+        accepted("https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLxxxx&start_radio=1&si=abc");
+    assertTrue(accepted.playlist());
+    assertEquals(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ", accepted.singleTrack().toString());
+    assertEquals(
+        "https://www.youtube.com/playlist?list=PLxxxx", accepted.uri().toString());
   }
 
   @Test
-  void youtubePlaylistPageRejected() {
-    assertRejected(
-        "https://youtube.com/playlist?list=PLxxxx", UrlDecision.Reason.PLAYLIST);
+  void youtubePlaylistPageAccepted() {
+    UrlDecision.Accepted accepted =
+        accepted("https://youtube.com/playlist?list=PLxxxx");
+    assertTrue(accepted.playlist());
+    assertEquals(null, accepted.singleTrack());
   }
 
   @Test
-  void youtubeShortLinkWithPlaylistParamRejected() {
-    assertRejected(
-        "https://youtu.be/dQw4w9WgXcQ?list=PLxxxx", UrlDecision.Reason.PLAYLIST);
+  void youtubeShortLinkWithPlaylistParamAcceptedWithTrackFallback() {
+    UrlDecision.Accepted accepted =
+        accepted("https://youtu.be/dQw4w9WgXcQ?list=PLxxxx&si=abc");
+    assertTrue(accepted.playlist());
+    assertEquals(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ", accepted.singleTrack().toString());
+  }
+
+  @Test
+  void youtubeWatchStripsUnsupportedParamsAndKeepsStartTime() {
+    UrlDecision.Accepted accepted =
+        accepted("https://music.youtube.com/watch?v=dQw4w9WgXcQ&t=42s&index=3&si=x");
+    assertEquals(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s", accepted.uri().toString());
+    assertEquals(null, accepted.singleTrack());
+  }
+
+  @Test
+  void youtubeShortLinkCanonicalized() {
+    UrlDecision.Accepted accepted =
+        accepted("https://youtu.be/dQw4w9WgXcQ?si=tracking");
+    assertEquals(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ", accepted.uri().toString());
   }
 
   @Test
@@ -124,9 +157,10 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void soundcloudSetRejectedAsPlaylist() {
-    assertRejected(
-        "https://soundcloud.com/artist/sets/name", UrlDecision.Reason.PLAYLIST);
+  void soundcloudSetAcceptedAsPlaylist() {
+    UrlDecision.Accepted accepted =
+        accepted("https://soundcloud.com/artist/sets/name");
+    assertTrue(accepted.playlist());
   }
 
   @Test
@@ -157,45 +191,55 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void spotifyTrackRejectedWithSpotifyReason() {
-    assertRejected(
-        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm", UrlDecision.Reason.SPOTIFY);
+  void spotifyTrackAcceptedAsMetadataSource() {
+    UrlDecision.Accepted accepted =
+        accepted("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm");
+    assertFalse(accepted.playlist());
+    assertEquals(
+        "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm", accepted.uri().toString());
   }
 
   @Test
-  void spotifyEpisodeRejectedWithSpotifyReason() {
+  void spotifyEpisodeStillRejectedWithSpotifyReason() {
     assertRejected(
         "https://open.spotify.com/episode/4uLU6hMCjMI75M1A2tKUQm", UrlDecision.Reason.SPOTIFY);
   }
 
   @Test
-  void spotifyLocalePrefixTrackRejectedWithSpotifyReason() {
-    assertRejected(
-        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI", UrlDecision.Reason.SPOTIFY);
-    assertRejected(
-        "https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI?si=abc",
-        UrlDecision.Reason.SPOTIFY);
+  void spotifyLocalePrefixTrackAcceptedAndCanonicalized() {
+    UrlDecision.Accepted accepted =
+        accepted("https://open.spotify.com/intl-pt/track/4R3KyW2k2rNfSWo1wrwqKI?si=abc");
+    assertEquals(
+        "https://open.spotify.com/track/4R3KyW2k2rNfSWo1wrwqKI", accepted.uri().toString());
   }
 
   @Test
-  void spotifyLocalePrefixCollectionsRejectedAsPlaylist() {
+  void spotifyLocalePrefixCollectionsStayRejected() {
     assertRejected(
         "https://open.spotify.com/intl-pt/album/1MgcKezYb874hGsZgYYAdV?si=x",
         UrlDecision.Reason.PLAYLIST);
   }
 
   @Test
-  void spotifyShortLinkRejectedWithSpotifyReason() {
-    assertRejected("https://spotify.link/abc123", UrlDecision.Reason.SPOTIFY);
+  void spotifyShortLinkAcceptedForMetadataResolution() {
+    UrlDecision.Accepted accepted = accepted("https://spotify.link/abc123");
+    assertEquals(Source.SPOTIFY, accepted.source());
   }
 
   @Test
-  void spotifyCollectionsRejectedAsPlaylist() {
+  void spotifyPlaylistAcceptedAsPlaylist() {
+    UrlDecision.Accepted accepted =
+        accepted("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=x");
+    assertTrue(accepted.playlist());
+    assertEquals(
+        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
+        accepted.uri().toString());
+  }
+
+  @Test
+  void spotifyCollectionsOutsideScopeStayRejected() {
     assertRejected(
         "https://open.spotify.com/album/52bcS8R0L0JKVxQb6MZFmW",
-        UrlDecision.Reason.PLAYLIST);
-    assertRejected(
-        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M",
         UrlDecision.Reason.PLAYLIST);
     assertRejected(
         "https://open.spotify.com/show/4uLU6hMCjMI75M1A2tKUQm",

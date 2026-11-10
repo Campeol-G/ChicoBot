@@ -148,6 +148,10 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
+    if (accepted.playlist()) {
+      // Replaced by the playlist-confirm flow; never load a list as one track.
+      return CompletableFuture.completedFuture(refused("Playlists are not supported yet."));
+    }
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
       return playQuery(guildId, voiceChannelId, query)

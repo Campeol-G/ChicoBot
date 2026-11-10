@@ -9,19 +9,22 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Accepts only exact single-track URL formats. Anything else is rejected
- * before any request; non-URLs come back INVALID and go to text search.
+ * Accepts track and playlist URL formats from supported sources. Unsupported
+ * parameters are stripped instead of refusing the link; non-URLs come back
+ * INVALID and go to text search.
  */
 public final class TrackUrlPolicy {
 
   private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+  private static final Pattern LIST_ID = Pattern.compile("[A-Za-z0-9_-]{2,}");
+  private static final Pattern SPOTIFY_ID = Pattern.compile("[A-Za-z0-9]{10,}");
+  private static final Pattern TIME_PARAM = Pattern.compile("[0-9hms]+");
   private static final Pattern UNLISTED_TOKEN = Pattern.compile("s-.+");
 
   private static final Set<String> YOUTUBE_HOSTS =
       Set.of("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com");
   private static final Set<String> SOUNDCLOUD_HOSTS =
       Set.of("soundcloud.com", "www.soundcloud.com", "m.soundcloud.com");
-  private static final Set<String> SPOTIFY_HOSTS = Set.of("open.spotify.com", "spotify.link");
   private static final Set<String> APPLE_MUSIC_HOSTS =
       Set.of("music.apple.com", "www.music.apple.com");
 
@@ -97,21 +100,26 @@ public final class TrackUrlPolicy {
     if (path == null) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
+    Map<String, String> params = queryParams(uri.getQuery());
     if (path.equals("/playlist")) {
-      return rejected(UrlDecision.Reason.PLAYLIST);
+      return playlistPage(params);
     }
     if (!path.equals("/watch")) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    Map<String, String> params = queryParams(uri.getQuery());
-    if (params.containsKey("list")) {
-      return rejected(UrlDecision.Reason.PLAYLIST);
-    }
     String id = params.get("v");
+    String list = params.get("list");
     if (id == null || !VIDEO_ID.matcher(id).matches()) {
-      return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+      // watch?list=... with no video is a playlist link.
+      return list != null && !list.isEmpty() ? playlistPage(params)
+          : rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    return accepted(Source.YOUTUBE, uri);
+    URI single = youtubeWatch(id, params.get("t"));
+    if (list != null && LIST_ID.matcher(list).matches()) {
+      return new UrlDecision.Accepted(
+          Source.YOUTUBE, playlistUri(list), true, single);
+    }
+    return accepted(Source.YOUTUBE, single);
   }
 
   private static UrlDecision youtubeShort(URI uri) {
@@ -119,10 +127,46 @@ public final class TrackUrlPolicy {
     if (segments.size() != 1 || !VIDEO_ID.matcher(segments.get(0)).matches()) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    if (queryParams(uri.getQuery()).containsKey("list")) {
-      return rejected(UrlDecision.Reason.PLAYLIST);
+    URI single = youtubeWatch(segments.get(0), queryParams(uri.getQuery()).get("t"));
+    String list = queryParams(uri.getQuery()).get("list");
+    if (list != null && LIST_ID.matcher(list).matches()) {
+      return new UrlDecision.Accepted(
+          Source.YOUTUBE, playlistUri(list), true, single);
     }
-    return accepted(Source.YOUTUBE, uri);
+    return accepted(Source.YOUTUBE, single);
+  }
+
+  /**
+   * Keeps only the video id and a valid {@code t} start time. Radio, mix,
+   * tracking and index parameters are dropped: they never change the track.
+   */
+  private static URI youtubeWatch(String id, String time) {
+    StringBuilder query = new StringBuilder("v=").append(id);
+    if (time != null && !time.isEmpty() && TIME_PARAM.matcher(time).matches()
+        && time.chars().anyMatch(Character::isDigit)) {
+      query.append("&t=").append(time);
+    }
+    try {
+      return new URI("https", "www.youtube.com", "/watch", query.toString(), null);
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException("validated video id produced a bad URI", e);
+    }
+  }
+
+  private static URI playlistUri(String list) {
+    try {
+      return new URI("https", "www.youtube.com", "/playlist", "list=" + list, null);
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException("validated list id produced a bad URI", e);
+    }
+  }
+
+  private static UrlDecision playlistPage(Map<String, String> params) {
+    String list = params.get("list");
+    if (list == null || !LIST_ID.matcher(list).matches()) {
+      return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
+    }
+    return new UrlDecision.Accepted(Source.YOUTUBE, playlistUri(list), true, null);
   }
 
   private static UrlDecision soundcloud(URI uri) {
@@ -133,22 +177,22 @@ public final class TrackUrlPolicy {
     if (segments.size() == 1) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
+    if (segments.get(1).equals("sets") && segments.size() == 3) {
+      return new UrlDecision.Accepted(Source.SOUNDCLOUD, canonical(uri), true, null);
+    }
     if (segments.size() == 2) {
       if (segments.get(1).equals("sets")) {
-        return rejected(UrlDecision.Reason.PLAYLIST);
+        return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
       }
       if (SOUNDCLOUD_SECTIONS.contains(segments.get(1))) {
         return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
       }
-      return accepted(Source.SOUNDCLOUD, uri);
-    }
-    if (segments.get(1).equals("sets")) {
-      return rejected(UrlDecision.Reason.PLAYLIST);
+      return accepted(Source.SOUNDCLOUD, canonical(uri));
     }
     if (!UNLISTED_TOKEN.matcher(segments.get(2)).matches()) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    return accepted(Source.SOUNDCLOUD, uri);
+    return accepted(Source.SOUNDCLOUD, canonical(uri));
   }
 
   private static UrlDecision soundcloudShort(URI uri) {
@@ -164,12 +208,20 @@ public final class TrackUrlPolicy {
     if (!segments.isEmpty() && isLocalePrefix(segments.get(0))) {
       segments = segments.subList(1, segments.size());
     }
-    if (segments.size() < 2 || segments.get(1).isEmpty()) {
+    if (segments.size() < 2 || !SPOTIFY_ID.matcher(segments.get(1)).matches()) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    return switch (segments.get(0)) {
-      case "track", "episode" -> rejected(UrlDecision.Reason.SPOTIFY);
-      case "album", "playlist", "show" -> rejected(UrlDecision.Reason.PLAYLIST);
+    String kind = segments.get(0);
+    String id = segments.get(1);
+    if (kind.equals("track")) {
+      return accepted(Source.SPOTIFY, spotifyUri("track", id));
+    }
+    if (kind.equals("playlist")) {
+      return new UrlDecision.Accepted(Source.SPOTIFY, spotifyUri("playlist", id), true, null);
+    }
+    return switch (kind) {
+      case "episode" -> rejected(UrlDecision.Reason.SPOTIFY);
+      case "album", "show" -> rejected(UrlDecision.Reason.PLAYLIST);
       default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     };
   }
@@ -184,9 +236,16 @@ public final class TrackUrlPolicy {
     if (segments.size() != 1) {
       return rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     }
-    // Short links hide the content type; without credentials nothing
-    // behind them can resolve, so refuse with the Spotify message.
-    return rejected(UrlDecision.Reason.SPOTIFY);
+    // The content type is behind the redirect; the metadata layer follows it.
+    return accepted(Source.SPOTIFY, uri);
+  }
+
+  private static URI spotifyUri(String kind, String id) {
+    try {
+      return new URI("https", "open.spotify.com", "/" + kind + "/" + id, null, null);
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException("validated Spotify id produced a bad URI", e);
+    }
   }
 
   private static UrlDecision appleMusic(URI uri) {
@@ -243,6 +302,15 @@ public final class TrackUrlPolicy {
       }
     }
     return params;
+  }
+
+  private static URI canonical(URI uri) {
+    try {
+      return new URI("https", uri.getHost().toLowerCase(java.util.Locale.ROOT), uri.getPath(),
+          null, null);
+    } catch (URISyntaxException e) {
+      return uri;
+    }
   }
 
   private static UrlDecision accepted(Source source, URI uri) {
