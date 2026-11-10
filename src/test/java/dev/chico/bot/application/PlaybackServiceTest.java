@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -308,6 +309,29 @@ class PlaybackServiceTest {
     assertTrue(result.queued());
     assertEquals("Never Gonna Give You Up", result.candidate().title());
     assertEquals(1, voice.connects.get());
+  }
+
+  @Test
+  void loopRepliesFollowTargetSemantics() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha"), candidate("Beta")));
+
+    assertEquals("Looping current track.", service.loop(1L, Optional.empty()));
+    assertEquals("Loop disabled.", service.loop(1L, Optional.of("disable")));
+    assertEquals("Looping queue (2 tracks).", service.loop(1L, Optional.of("all")));
+    assertEquals("Looping track 2 - Beta.", service.loop(1L, Optional.of("2")));
+    assertEquals("No queued track matches that.", service.loop(1L, Optional.of("0")));
+    assertEquals("No queued track matches that.", service.loop(1L, Optional.of("9")));
+    assertTrue(service.loop(1L, Optional.of("wat")).startsWith("Use `/loop`"));
+  }
+
+  @Test
+  void loopWithNothingPlayingSaysSo() {
+    PlaybackService service = service();
+
+    assertEquals("Nothing is playing.", service.loop(1L, Optional.empty()));
+    assertEquals("Nothing is playing.", service.loop(1L, Optional.of("all")));
+    assertEquals("Loop disabled.", service.loop(1L, Optional.of("disable")));
   }
 
   @Test

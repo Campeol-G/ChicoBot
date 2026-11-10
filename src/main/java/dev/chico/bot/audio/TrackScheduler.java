@@ -6,6 +6,8 @@ import com.sedmelluq.discord.lavaplayer.tools.FriendlyException;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
 import dev.chico.bot.source.TrackCandidate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,19 @@ import org.slf4j.LoggerFactory;
  */
 public final class TrackScheduler extends AudioEventAdapter {
 
+  public enum LoopMode {
+    OFF,
+    SINGLE,
+    ALL
+  }
+
+  /** Loop state for the queue embed: marked display position, 0 when none. */
+  public record LoopView(LoopMode mode, int markedPosition) {
+    public static LoopView off() {
+      return new LoopView(LoopMode.OFF, 0);
+    }
+  }
+
   private static final Logger log = LoggerFactory.getLogger(TrackScheduler.class);
 
   private final AudioPlayer player;
@@ -23,6 +38,12 @@ public final class TrackScheduler extends AudioEventAdapter {
   private volatile TrackCandidate current;
   private volatile TrackCandidate pending;
   private volatile boolean advancing;
+
+  private volatile LoopMode loopMode = LoopMode.OFF;
+  private volatile int loopMarkedAdvances;
+  private volatile long loopMarkedItemId;
+  private final List<TrackCandidate> loopCycle = new ArrayList<>();
+  private int loopCursor;
 
   public TrackScheduler(AudioPlayer player, int maxQueue) {
     this.player = player;
@@ -35,12 +56,17 @@ public final class TrackScheduler extends AudioEventAdapter {
       if (player.startTrack(candidate.track(), true)) {
         current = candidate;
         pending = candidate;
+        appendToCycle(candidate);
         return true;
       }
     } finally {
       advancing = false;
     }
-    return queue.add(candidate);
+    boolean added = queue.add(candidate);
+    if (added) {
+      appendToCycle(candidate);
+    }
+    return added;
   }
 
   public synchronized void nextTrack() {
@@ -81,12 +107,13 @@ public final class TrackScheduler extends AudioEventAdapter {
    * zero-based into the queue.
    */
   public synchronized Optional<TrackCandidate> removeAt(int queueIndex) {
-    java.util.List<TrackCandidate> queued = queue.snapshot();
+    List<TrackCandidate> queued = queue.snapshot();
     if (queueIndex < 0 || queueIndex >= queued.size()) {
       return Optional.empty();
     }
     TrackCandidate removed = queued.get(queueIndex);
     queue.removeAt(queueIndex);
+    onRemoved(removed);
     return Optional.of(removed);
   }
 
@@ -96,6 +123,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     queue.clear();
     current = null;
     pending = null;
+    clearLoop();
   }
 
   public Optional<TrackCandidate> current() {
@@ -104,6 +132,68 @@ public final class TrackScheduler extends AudioEventAdapter {
 
   public TrackQueue<TrackCandidate> queueView() {
     return queue;
+  }
+
+  public synchronized LoopView loopView() {
+    if (loopMode != LoopMode.SINGLE) {
+      return new LoopView(loopMode, 0);
+    }
+    return new LoopView(loopMode, loopMarkedAdvances + 1);
+  }
+
+  /** Loops whatever is playing now. */
+  public synchronized Optional<TrackCandidate> loopCurrent() {
+    if (current == null) {
+      return Optional.empty();
+    }
+    armSingle(0, current.itemId());
+    return current();
+  }
+
+  /** Loops the display position once playback naturally reaches it. */
+  public synchronized Optional<TrackCandidate> loopAt(int displayPosition) {
+    if (displayPosition == 1) {
+      return loopCurrent();
+    }
+    List<TrackCandidate> queued = queue.snapshot();
+    int index = displayPosition - 2;
+    if (index < 0 || index >= queued.size()) {
+      return Optional.empty();
+    }
+    TrackCandidate target = queued.get(index);
+    armSingle(displayPosition - 1, target.itemId());
+    return Optional.of(target);
+  }
+
+  /** Repeats the current+queued snapshot as one mutable cycle. */
+  public synchronized Optional<Integer> loopAll() {
+    if (current == null && queue.size() == 0) {
+      return Optional.empty();
+    }
+    loopMode = LoopMode.ALL;
+    loopCycle.clear();
+    if (current != null) {
+      loopCycle.add(current);
+    }
+    loopCycle.addAll(queue.snapshot());
+    loopCursor = 0;
+    return Optional.of(loopCycle.size());
+  }
+
+  public synchronized void clearLoop() {
+    loopMode = LoopMode.OFF;
+    loopMarkedAdvances = 0;
+    loopMarkedItemId = 0;
+    loopCycle.clear();
+    loopCursor = 0;
+  }
+
+  private void armSingle(int advances, long itemId) {
+    loopMode = LoopMode.SINGLE;
+    loopMarkedAdvances = advances;
+    loopMarkedItemId = itemId;
+    loopCycle.clear();
+    loopCursor = 0;
   }
 
   @Override
@@ -128,7 +218,7 @@ public final class TrackScheduler extends AudioEventAdapter {
       return;
     }
     if (current != null && current.track() == track) {
-      nextTrack();
+      advance();
     }
   }
 
@@ -140,7 +230,114 @@ public final class TrackScheduler extends AudioEventAdapter {
       return;
     }
     if (current != null && current.track() == track) {
+      if (loopMode == LoopMode.SINGLE) {
+        clearLoop();
+      } else if (loopMode == LoopMode.ALL) {
+        removeFromCycle(current.itemId());
+      }
       nextTrack();
+    }
+  }
+
+  private void advance() {
+    if (loopMode == LoopMode.SINGLE) {
+      if (loopMarkedAdvances > 0) {
+        loopMarkedAdvances--;
+        nextTrack();
+        if (current == null) {
+          clearLoop();
+        }
+      } else {
+        replaySingle();
+      }
+      return;
+    }
+    if (loopMode == LoopMode.ALL) {
+      nextTrack();
+      if (current == null) {
+        replayCycle();
+      }
+      return;
+    }
+    nextTrack();
+  }
+
+  private void replaySingle() {
+    TrackCandidate looped = current;
+    if (looped == null || looped.track() == null) {
+      clearLoop();
+      nextTrack();
+      return;
+    }
+    startReplay(looped);
+  }
+
+  private void replayCycle() {
+    while (!loopCycle.isEmpty()) {
+      if (loopCursor >= loopCycle.size()) {
+        loopCursor = 0;
+      }
+      TrackCandidate next = loopCycle.get(loopCursor);
+      loopCursor++;
+      if (next.track() == null) {
+        removeFromCycle(next.itemId());
+        continue;
+      }
+      startReplay(next);
+      return;
+    }
+    clearLoop();
+    nextTrack();
+  }
+
+  private void startReplay(TrackCandidate source) {
+    TrackCandidate replay = source.withTrack(source.track().makeClone());
+    pending = replay;
+    advancing = true;
+    try {
+      player.startTrack(replay.track(), false);
+    } finally {
+      advancing = false;
+    }
+    current = replay;
+  }
+
+  private void appendToCycle(TrackCandidate candidate) {
+    if (loopMode == LoopMode.ALL) {
+      loopCycle.add(candidate);
+    }
+  }
+
+  private void onRemoved(TrackCandidate removed) {
+    if (loopMode == LoopMode.SINGLE && loopMarkedItemId == removed.itemId()) {
+      clearLoop();
+      return;
+    }
+    if (loopMode == LoopMode.ALL) {
+      removeFromCycle(removed.itemId());
+    }
+  }
+
+  private void removeFromCycle(long itemId) {
+    int index = -1;
+    for (int i = 0; i < loopCycle.size(); i++) {
+      if (loopCycle.get(i).itemId() == itemId) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) {
+      return;
+    }
+    loopCycle.remove(index);
+    if (index < loopCursor) {
+      loopCursor--;
+    }
+    if (loopCursor >= loopCycle.size()) {
+      loopCursor = 0;
+    }
+    if (loopCycle.isEmpty()) {
+      clearLoop();
     }
   }
 }

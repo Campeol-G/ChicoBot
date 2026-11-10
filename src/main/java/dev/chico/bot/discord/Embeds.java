@@ -34,16 +34,31 @@ public final class Embeds {
   }
 
   public static MessageEmbed queue(List<TrackCandidate> queued) {
+    return queue(queued, dev.chico.bot.audio.TrackScheduler.LoopView.off());
+  }
+
+  public static MessageEmbed queue(
+      List<TrackCandidate> queued, dev.chico.bot.audio.TrackScheduler.LoopView loop) {
     EmbedBuilder builder = new EmbedBuilder().setTitle("Queue").setColor(Color.BLUE);
+    boolean loopAll =
+        loop != null && loop.mode() == dev.chico.bot.audio.TrackScheduler.LoopMode.ALL;
     if (queued.isEmpty()) {
       builder.setDescription("The queue is empty.");
+      if (loopAll) {
+        builder.setFooter("🔁 Looping the queue.");
+      }
       return builder.build();
     }
     StringBuilder lines = new StringBuilder();
     int shown = Math.min(queued.size(), MAX_QUEUE_LINES);
     for (int i = 0; i < shown; i++) {
       TrackCandidate candidate = queued.get(i);
+      boolean marked =
+          loop != null
+              && loop.mode() == dev.chico.bot.audio.TrackScheduler.LoopMode.SINGLE
+              && loop.markedPosition() == i + 1;
       lines
+          .append(marked ? "🔂 " : "")
           .append(i + 1)
           .append(". ")
           .append(TextSanitizer.escape(candidate.title()))
@@ -55,6 +70,9 @@ public final class Embeds {
       lines.append("…and ").append(queued.size() - shown).append(" more.");
     }
     builder.setDescription(truncate(lines.toString().trim()));
+    if (loopAll) {
+      builder.setFooter("🔁 Looping the queue.");
+    }
     return builder.build();
   }
 

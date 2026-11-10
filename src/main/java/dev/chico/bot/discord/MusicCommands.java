@@ -27,6 +27,7 @@ public final class MusicCommands extends ListenerAdapter {
   static final String REMOVE = "remove";
   static final String LEAVE = "leave";
   static final String NOW_PLAYING = "nowplaying";
+  static final String LOOP = "loop";
 
   private static final Logger log = LoggerFactory.getLogger(MusicCommands.class);
 
@@ -40,7 +41,7 @@ public final class MusicCommands extends ListenerAdapter {
   private static List<net.dv8tion.jda.api.interactions.commands.build.CommandData> commandData() {
     return List.of(
         Commands.slash(PLAY, "Play a song by name or link")
-            .addOption(OptionType.STRING, "query", "Song name or audio URL", true),
+            .addOption(OptionType.STRING, "query", "Song name or audio URL", false),
         Commands.slash(PAUSE, "Pause the current track"),
         Commands.slash(RESUME, "Resume the current track"),
         Commands.slash(SKIP, "Skip the current track or jump to a queued one")
@@ -50,7 +51,10 @@ public final class MusicCommands extends ListenerAdapter {
         Commands.slash(REMOVE, "Remove a queued track")
             .addOption(OptionType.STRING, "target", "Queue number or name", true),
         Commands.slash(LEAVE, "Leave the voice channel"),
-        Commands.slash(NOW_PLAYING, "Show the current track"));
+        Commands.slash(NOW_PLAYING, "Show the current track"),
+        Commands.slash(LOOP, "Loop the current track, a queued position or the queue")
+            .addOption(
+                OptionType.STRING, "target", "Queue number, all, or disable", false));
   }
 
   static void register(Guild guild) {
@@ -77,6 +81,7 @@ public final class MusicCommands extends ListenerAdapter {
       case REMOVE -> onRemove(event);
       case LEAVE -> reply(event, playback.leave(guildOf(event)));
       case NOW_PLAYING -> onNowPlaying(event);
+      case LOOP -> onLoop(event);
       default -> {
       }
     }
@@ -148,6 +153,16 @@ public final class MusicCommands extends ListenerAdapter {
     reply(event, playback.remove(guildOf(event), option.getAsString()));
   }
 
+  private void onLoop(SlashCommandInteractionEvent event) {
+    if (!inSameChannel(event)) {
+      return;
+    }
+    OptionMapping option = event.getOption("target");
+    Optional<String> target =
+        option == null ? Optional.empty() : Optional.of(option.getAsString());
+    reply(event, playback.loop(guildOf(event), target));
+  }
+
   private void onQueue(SlashCommandInteractionEvent event) {
     if (event.getGuild() == null) {
       event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
@@ -160,10 +175,10 @@ public final class MusicCommands extends ListenerAdapter {
           null, err -> log.warn("queue reply failed", err));
       return;
     }
-    java.util.List<dev.chico.bot.source.TrackCandidate> all = new java.util.ArrayList<>();
+    List<dev.chico.bot.source.TrackCandidate> all = new java.util.ArrayList<>();
     view.current().ifPresent(all::add);
     all.addAll(view.queued());
-    event.getHook().sendMessageEmbeds(Embeds.queue(all)).queue(
+    event.getHook().sendMessageEmbeds(Embeds.queue(all, playback.loopView(guildOf(event)))).queue(
         null, err -> log.warn("queue reply failed", err));
   }
 

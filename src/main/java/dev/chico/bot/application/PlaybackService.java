@@ -212,6 +212,61 @@ public final class PlaybackService {
     return "Resumed.";
   }
 
+  /** Loop target semantics: empty/1 = current, "all", "disable" or a number. */
+  public String loop(long guildId, Optional<String> target) {
+    GuildMusicManager music = managers.get(guildId);
+    String raw = target.orElse("").strip();
+    String lowered = raw.toLowerCase(java.util.Locale.ROOT);
+    if (lowered.equals("disable")) {
+      if (music != null) {
+        music.scheduler().clearLoop();
+      }
+      return "Loop disabled.";
+    }
+    if (music == null) {
+      return "Nothing is playing.";
+    }
+    if (lowered.isEmpty() || lowered.equals("1")) {
+      return music.scheduler().loopCurrent().isPresent()
+          ? "Looping current track."
+          : "Nothing is playing.";
+    }
+    if (lowered.equals("all")) {
+      return music
+          .scheduler()
+          .loopAll()
+          .map(size -> "Looping queue (" + size + " tracks).")
+          .orElse("Nothing is playing.");
+    }
+    int position;
+    try {
+      position = Integer.parseInt(lowered);
+    } catch (NumberFormatException notANumber) {
+      return "Use `/loop`, `/loop <number>`, `/loop all` or `/loop disable`.";
+    }
+    if (position < 1) {
+      return "No queued track matches that.";
+    }
+    return music
+        .scheduler()
+        .loopAt(position)
+        .map(
+            marked ->
+                "Looping track "
+                    + position
+                    + " - "
+                    + dev.chico.bot.security.TextSanitizer.escape(marked.title())
+                    + ".")
+        .orElse("No queued track matches that.");
+  }
+
+  public dev.chico.bot.audio.TrackScheduler.LoopView loopView(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    return music == null
+        ? dev.chico.bot.audio.TrackScheduler.LoopView.off()
+        : music.scheduler().loopView();
+  }
+
   public String stop(long guildId) {
     GuildMusicManager music = managers.get(guildId);
     if (music == null || music.player().getPlayingTrack() == null) {
@@ -230,6 +285,7 @@ public final class PlaybackService {
     }
     if (target.isEmpty() || target.orElseThrow().isBlank()) {
       synchronized (music.scheduler()) {
+        music.scheduler().clearLoop();
         music.scheduler().nextTrack();
       }
       return "Skipped.";
@@ -238,6 +294,7 @@ public final class PlaybackService {
     try {
       if (Integer.parseInt(trimmed) == 1) {
         synchronized (music.scheduler()) {
+          music.scheduler().clearLoop();
           music.scheduler().nextTrack();
         }
         return "Skipped.";
@@ -250,6 +307,7 @@ public final class PlaybackService {
       if (index.isEmpty()) {
         return "No queued track matches that.";
       }
+      music.scheduler().clearLoop();
       music.scheduler().skipTo(index.orElseThrow() - 1);
     }
     return "Skipped.";

@@ -31,6 +31,7 @@ public final class Bot {
           MusicCommands.REMOVE,
           MusicCommands.LEAVE,
           MusicCommands.NOW_PLAYING,
+          MusicCommands.LOOP,
           ImageContextMenu.COMMAND,
           "ping");
 

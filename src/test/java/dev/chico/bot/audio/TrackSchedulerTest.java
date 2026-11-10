@@ -218,6 +218,81 @@ class TrackSchedulerTest {
   }
 
   @Test
+  void loopCurrentReplaysCloneOnEnd() {
+    Fixture fix = fixture();
+
+    assertEquals("a", fix.scheduler().loopCurrent().orElseThrow().title());
+    fix.scheduler().onTrackEnd(fix.player(), fix.a().track(), AudioTrackEndReason.FINISHED);
+
+    assertEquals("a", fix.scheduler().current().orElseThrow().title());
+    assertEquals("b", fix.scheduler().queueView().snapshot().get(0).title());
+    assertEquals(
+        TrackScheduler.LoopMode.SINGLE, fix.scheduler().loopView().mode());
+    assertEquals(1, fix.scheduler().loopView().markedPosition());
+  }
+
+  @Test
+  void loopAtWaitsForPositionThenLoops() {
+    Fixture fix = fixture();
+
+    assertEquals(
+        "b", fix.scheduler().loopAt(2).orElseThrow().title());
+    fix.scheduler().onTrackEnd(fix.player(), fix.a().track(), AudioTrackEndReason.FINISHED);
+
+    assertEquals("b", fix.scheduler().current().orElseThrow().title());
+    assertEquals(1, fix.scheduler().loopView().markedPosition());
+
+    TrackCandidate playing = fix.scheduler().current().orElseThrow();
+    fix.scheduler().onTrackEnd(fix.player(), playing.track(), AudioTrackEndReason.FINISHED);
+
+    assertEquals("b", fix.scheduler().current().orElseThrow().title());
+    assertTrue(fix.scheduler().queueView().snapshot().isEmpty());
+  }
+
+  @Test
+  void loopAllCyclesSnapshot() {
+    Fixture fix = fixture();
+
+    assertEquals(2, fix.scheduler().loopAll().orElseThrow());
+    fix.scheduler().onTrackEnd(fix.player(), fix.a().track(), AudioTrackEndReason.FINISHED);
+    assertEquals("b", fix.scheduler().current().orElseThrow().title());
+
+    TrackCandidate playing = fix.scheduler().current().orElseThrow();
+    fix.scheduler().onTrackEnd(fix.player(), playing.track(), AudioTrackEndReason.FINISHED);
+    assertEquals("a", fix.scheduler().current().orElseThrow().title());
+
+    playing = fix.scheduler().current().orElseThrow();
+    fix.scheduler().onTrackEnd(fix.player(), playing.track(), AudioTrackEndReason.FINISHED);
+    assertEquals("b", fix.scheduler().current().orElseThrow().title());
+  }
+
+  @Test
+  void removingMarkedTrackClearsSingleLoop() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler = new TrackScheduler(player, 200);
+    TrackCandidate a = candidate("a").withQueueIdentity(1L, 0L);
+    TrackCandidate b = candidate("b").withQueueIdentity(2L, 0L);
+    scheduler.queue(a);
+    scheduler.queue(b);
+
+    scheduler.loopAt(2);
+    scheduler.removeAt(0);
+
+    assertEquals(TrackScheduler.LoopMode.OFF, scheduler.loopView().mode());
+  }
+
+  @Test
+  void stopAndClearDisarmsLoop() {
+    Fixture fix = fixture();
+    fix.scheduler().loopAll();
+
+    fix.scheduler().stopAndClear();
+
+    assertEquals(TrackScheduler.LoopMode.OFF, fix.scheduler().loopView().mode());
+  }
+
+  @Test
   void skipToJumpsToTarget() {
     Fixture fix = fixture();
 

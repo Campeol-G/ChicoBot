@@ -30,6 +30,24 @@ class EmbedsTest {
   }
 
   @Test
+  void queueMarksLoopTargetAndQueueLoop() {
+    var listed =
+        Embeds.queue(
+            List.of(candidate("First", "a", 200), candidate("Second", "b", 200)),
+            new dev.chico.bot.audio.TrackScheduler.LoopView(
+                dev.chico.bot.audio.TrackScheduler.LoopMode.SINGLE, 2));
+    assertTrue(listed.getDescription().contains("🔂 2."), listed.getDescription());
+
+    var looped =
+        Embeds.queue(
+            List.of(candidate("First", "a", 200)),
+            new dev.chico.bot.audio.TrackScheduler.LoopView(
+                dev.chico.bot.audio.TrackScheduler.LoopMode.ALL, 0));
+    assertNotNull(looped.getFooter());
+    assertTrue(looped.getFooter().getText().contains("🔁"), looped.getFooter().getText());
+  }
+
+  @Test
   void queueIsNumberedFromOne() {
     var embed =
         Embeds.queue(
