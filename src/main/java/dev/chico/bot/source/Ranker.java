@@ -8,8 +8,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Orders search candidates by text similarity. In v1 the threshold only
- * documents intent: the score orders, it never refuses.
+ * Orders search candidates by text similarity. The threshold gates OCR
+ * imports (a poor best match becomes "not found"); /play text queries
+ * keep the order-only behavior.
  */
 public final class Ranker {
 
