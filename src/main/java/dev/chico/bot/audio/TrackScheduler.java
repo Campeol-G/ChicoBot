@@ -36,9 +36,11 @@ public final class TrackScheduler extends AudioEventAdapter {
   private final AudioPlayer player;
   private final TrackQueue<TrackCandidate> queue;
   private final Runnable onChange;
+  private final TrackFailureHandler failureHandler;
   private volatile TrackCandidate current;
   private volatile TrackCandidate pending;
   private volatile boolean advancing;
+  private volatile boolean recovering;
 
   private volatile LoopMode loopMode = LoopMode.OFF;
   private volatile int loopMarkedAdvances;
@@ -48,13 +50,19 @@ public final class TrackScheduler extends AudioEventAdapter {
 
   public TrackScheduler(AudioPlayer player, int maxQueue) {
     this(player, maxQueue, () -> {
-    });
+    }, null);
   }
 
   public TrackScheduler(AudioPlayer player, int maxQueue, Runnable onChange) {
+    this(player, maxQueue, onChange, null);
+  }
+
+  public TrackScheduler(
+      AudioPlayer player, int maxQueue, Runnable onChange, TrackFailureHandler failureHandler) {
     this.player = player;
     this.queue = new TrackQueue<>(maxQueue);
     this.onChange = onChange;
+    this.failureHandler = failureHandler;
   }
 
   public synchronized boolean queue(TrackCandidate candidate) {
@@ -228,6 +236,10 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (pending != null && pending.track() != track) {
       return;
     }
+    if (recovering && current != null && current.track() == track) {
+      // Recovery owns the failed track: never auto-advance or loop it.
+      return;
+    }
     log.info(
         "track ended reason={} mayStartNext={} title={}",
         endReason, endReason.mayStartNext, track.getInfo().title);
@@ -245,18 +257,67 @@ public final class TrackScheduler extends AudioEventAdapter {
   @Override
   public synchronized void onTrackException(
       AudioPlayer player, AudioTrack track, FriendlyException exception) {
-    log.warn("Track failed, skipping to next: {}", track.getInfo().title, exception);
+    log.warn("Track failed, recovering: {}", track.getInfo().title, exception);
     if (pending != null && pending.track() != track) {
       return;
     }
     if (current != null && current.track() == track) {
       if (loopMode == LoopMode.SINGLE) {
         clearLoop();
-      } else if (loopMode == LoopMode.ALL) {
+      }
+      if (failureHandler != null) {
+        recovering = true;
+        failureHandler.onFailure(this, current, exception);
+        return;
+      }
+      if (loopMode == LoopMode.ALL) {
         removeFromCycle(current.itemId());
       }
       nextTrack();
       changed();
+    }
+  }
+
+  /** Plays a recovered candidate in the failed track's exact position. */
+  public synchronized void replaceCurrent(TrackCandidate candidate) {
+    recovering = false;
+    replaceCycleEntry(candidate);
+    pending = candidate;
+    advancing = true;
+    boolean started;
+    try {
+      started = player.startTrack(candidate.track(), false);
+    } finally {
+      advancing = false;
+    }
+    if (!started) {
+      nextTrack();
+      changed();
+      return;
+    }
+    current = candidate;
+    changed();
+  }
+
+  /** Recovery gave up: skip the failed track and report it by name. */
+  public synchronized void skipFailed() {
+    recovering = false;
+    if (loopMode == LoopMode.ALL && current != null) {
+      removeFromCycle(current.itemId());
+    }
+    nextTrack();
+    changed();
+  }
+
+  private void replaceCycleEntry(TrackCandidate candidate) {
+    if (loopMode != LoopMode.ALL) {
+      return;
+    }
+    for (int i = 0; i < loopCycle.size(); i++) {
+      if (loopCycle.get(i).itemId() == candidate.itemId()) {
+        loopCycle.set(i, candidate);
+        return;
+      }
     }
   }
 

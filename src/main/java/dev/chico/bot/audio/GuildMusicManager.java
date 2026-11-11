@@ -16,12 +16,20 @@ public final class GuildMusicManager {
 
   public GuildMusicManager(AudioPlayerManager manager, int queueMax) {
     this(manager, queueMax, () -> {
-    });
+    }, null);
   }
 
   public GuildMusicManager(AudioPlayerManager manager, int queueMax, Runnable onChange) {
+    this(manager, queueMax, onChange, null);
+  }
+
+  public GuildMusicManager(
+      AudioPlayerManager manager,
+      int queueMax,
+      Runnable onChange,
+      TrackFailureHandler failureHandler) {
     this.player = manager.createPlayer();
-    this.scheduler = new TrackScheduler(player, queueMax, onChange);
+    this.scheduler = new TrackScheduler(player, queueMax, onChange, failureHandler);
     this.player.addListener(scheduler);
     this.sendHandler = new AudioPlayerSendHandler(player);
   }

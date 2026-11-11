@@ -10,8 +10,13 @@ public final class AudioPlayerSendHandler implements AudioSendHandler {
 
   private static final org.slf4j.Logger log =
       org.slf4j.LoggerFactory.getLogger(AudioPlayerSendHandler.class);
-  // SPIKE: throwaway gap/cadence counter, revert after measurement.
-  private static final long LOG_EVERY_MS = 60_000;
+  private static final long WINDOW_MS = 60_000;
+  private static final int WARN_GAP_PERCENT = 10;
+
+  private final AudioPlayer player;
+  private AudioFrame lastFrame;
+
+  // Counts only, never titles: titles are user content.
   private long polls;
   private long gaps;
   private long consecutiveNull;
@@ -20,18 +25,13 @@ public final class AudioPlayerSendHandler implements AudioSendHandler {
   private long maxIntervalMs;
   private long windowStartMs = System.currentTimeMillis();
 
-  private final AudioPlayer player;
-  private AudioFrame lastFrame;
-
   public AudioPlayerSendHandler(AudioPlayer player) {
     this.player = player;
   }
 
   @Override
   public boolean canProvide() {
-    // SPIKE: count only while actually playing; paused/idle polls silence forever.
-    boolean active =
-        player.getPlayingTrack() != null && !player.isPaused();
+    boolean active = player.getPlayingTrack() != null && !player.isPaused();
     long nowNanos = System.nanoTime();
     if (lastCallNanos != 0 && active) {
       long intervalMs = (nowNanos - lastCallNanos) / 1_000_000;
@@ -53,15 +53,17 @@ public final class AudioPlayerSendHandler implements AudioSendHandler {
         consecutiveNull = 0;
       }
       long nowMs = System.currentTimeMillis();
-      if (nowMs - windowStartMs >= LOG_EVERY_MS) {
-        // Counts only, never titles: titles are user content.
-        log.info(
-            "spike audio polls={} gaps={} gapPct={} maxConsecNull={} maxIntervalMs={}",
-            polls,
-            gaps,
-            polls == 0 ? 0 : gaps * 100 / polls,
-            maxConsecutiveNull,
-            maxIntervalMs);
+      if (nowMs - windowStartMs >= WINDOW_MS) {
+        int gapPct = polls == 0 ? 0 : (int) (gaps * 100 / polls);
+        if (gapPct > WARN_GAP_PERCENT) {
+          log.warn(
+              "audio health polls={} gaps={} gapPct={} maxConsecNull={} maxIntervalMs={}",
+              polls, gaps, gapPct, maxConsecutiveNull, maxIntervalMs);
+        } else {
+          log.debug(
+              "audio health polls={} gaps={} gapPct={} maxConsecNull={} maxIntervalMs={}",
+              polls, gaps, gapPct, maxConsecutiveNull, maxIntervalMs);
+        }
         polls = 0;
         gaps = 0;
         maxConsecutiveNull = 0;

@@ -70,6 +70,10 @@ public final class PlaybackService {
   private final TrackResolver resolver;
   private final MetadataLookup metadata;
   private final PlaylistFlow playlistFlow;
+  private final Map<Source, TrackLoader> loaders;
+  private final Ranker ranker;
+  private final AudioRecovery audioRecovery;
+  private final Map<Long, java.util.Set<Long>> retriedItems = new ConcurrentHashMap<>();
   private final RateLimiter rateLimiter = new RateLimiter();
   private final Clock clock;
   private final int queueMax;
@@ -78,6 +82,9 @@ public final class PlaybackService {
   private final Duration resolveTimeout;
   private volatile java.util.function.Consumer<Long> queueChanged = guildId -> {
   };
+  private volatile java.util.function.BiConsumer<Long, String> trackFailureListener =
+      (guildId, message) -> {
+      };
 
   public PlaybackService(VoiceConnector connector, Config config) {
     this(connector, config, Clock.systemUTC());
@@ -94,18 +101,20 @@ public final class PlaybackService {
     YoutubeAudioSourceManager youtube = createYoutubeSource(config);
     playerManager.registerSourceManager(youtube);
     playerManager.registerSourceManager(SoundCloudAudioSourceManager.createDefault());
-    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
-    loaders.put(
+    Map<Source, TrackLoader> createdLoaders = new EnumMap<>(Source.class);
+    createdLoaders.put(
         Source.YOUTUBE,
         new LavaplayerTrackLoader(Source.YOUTUBE, playerManager, MAX_SEARCH_RESULTS, resolveTimeout));
-    loaders.put(
+    createdLoaders.put(
         Source.SOUNDCLOUD,
         new LavaplayerTrackLoader(
             Source.SOUNDCLOUD, playerManager, MAX_SEARCH_RESULTS, resolveTimeout));
+    this.loaders = Map.copyOf(createdLoaders);
+    this.ranker = new Ranker(config.matchThreshold());
     this.resolver =
         new DefaultTrackResolver(
-            loaders,
-            new Ranker(config.matchThreshold()),
+            createdLoaders,
+            ranker,
             new CircuitBreaker(
                 config.sourceFailureThreshold(),
                 Duration.ofSeconds(config.sourceDegradedCooldownS()),
@@ -126,6 +135,8 @@ public final class PlaybackService {
             metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
+    this.audioRecovery =
+        new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
   }
 
   PlaybackService(
@@ -145,6 +156,10 @@ public final class PlaybackService {
             metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
+    this.loaders = Map.of();
+    this.ranker = new Ranker(config.matchThreshold());
+    this.audioRecovery =
+        new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
   }
 
   public AudioPlayerSendHandler sendHandler(long guildId) {
@@ -154,6 +169,13 @@ public final class PlaybackService {
   /** Discord-side hook: called after every queue/playback change. */
   public void setQueueChangeListener(java.util.function.Consumer<Long> listener) {
     this.queueChanged = listener == null ? guildId -> {
+    } : listener;
+  }
+
+  /** Discord-side hook: user-visible report when a track cannot be played. */
+  public void setTrackFailureListener(
+      java.util.function.BiConsumer<Long, String> listener) {
+    this.trackFailureListener = listener == null ? (guildId, message) -> {
     } : listener;
   }
 
@@ -621,6 +643,7 @@ public final class PlaybackService {
 
   public String leave(long guildId) {
     GuildMusicManager music = managers.remove(guildId);
+    retriedItems.remove(guildId);
     if (music != null) {
       synchronized (music) {
         music.scheduler().stopAndClear();
@@ -751,6 +774,73 @@ public final class PlaybackService {
         guildId,
         id ->
             new GuildMusicManager(
-                playerManager, queueMax, () -> notifyChanged(id)));
+                playerManager,
+                queueMax,
+                () -> notifyChanged(id),
+                (scheduler, failed, failure) ->
+                    handleTrackFailure(id, scheduler, failed, failure)));
+  }
+
+  private void handleTrackFailure(
+      long guildId,
+      dev.chico.bot.audio.TrackScheduler scheduler,
+      TrackCandidate failed,
+      com.sedmelluq.discord.lavaplayer.tools.FriendlyException exception) {
+    java.util.Set<Long> retried =
+        retriedItems.computeIfAbsent(guildId, key -> ConcurrentHashMap.newKeySet());
+    boolean alreadyRetried = !retried.add(failed.itemId());
+    audioRecovery
+        .recover(failed, exception, alreadyRetried)
+        .thenAccept(
+            recovered -> {
+              if (recovered.isPresent()) {
+                scheduler.replaceCurrent(
+                    recovered
+                        .orElseThrow()
+                        .withQueueIdentity(failed.itemId(), failed.addedBy()));
+              } else {
+                scheduler.skipFailed();
+                notifyTrackFailure(guildId, failed.title());
+              }
+            })
+        .exceptionally(
+            failure -> {
+              scheduler.skipFailed();
+              notifyTrackFailure(guildId, failed.title());
+              return null;
+            });
+  }
+
+  private CompletableFuture<TrackCandidate> reloadTrack(TrackCandidate failed) {
+    TrackLoader loader = loaders.get(failed.source());
+    if (loader == null || failed.uri() == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+    return loader
+        .loadUrl(failed.uri())
+        .thenApply(
+            candidates ->
+                candidates.isEmpty()
+                    ? null
+                    : candidates
+                        .get(0)
+                        .withQueueIdentity(failed.itemId(), failed.addedBy()))
+        .exceptionally(failure -> null);
+  }
+
+  private CompletableFuture<List<TrackCandidate>> searchFallback(String text) {
+    return resolver.resolve(new TextQuery(text));
+  }
+
+  private void notifyTrackFailure(long guildId, String title) {
+    try {
+      trackFailureListener.accept(
+          guildId,
+          "Skipped (unplayable): "
+              + dev.chico.bot.security.TextSanitizer.escape(title)
+              + ".");
+    } catch (RuntimeException e) {
+      log.debug("track failure listener failed", e);
+    }
   }
 }

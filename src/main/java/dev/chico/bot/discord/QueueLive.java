@@ -113,6 +113,29 @@ public final class QueueLive {
             });
   }
 
+  /** User-visible failure report: live channel, else the guild default. */
+  public void announceFailure(long guildId, String message) {
+    MessageChannel channel =
+        store
+            .get(guildId)
+            .map(entry -> jda.getChannelById(MessageChannel.class, entry.channelId()))
+            .orElse(null);
+    if (channel == null) {
+      var guild = jda.getGuildById(guildId);
+      if (guild != null && guild.getDefaultChannel() instanceof MessageChannel messageChannel) {
+        channel = messageChannel;
+      }
+    }
+    if (channel == null) {
+      log.info("audio failure without a report channel: {}", message);
+      return;
+    }
+    channel
+        .sendMessage(message)
+        .setAllowedMentions(Collections.emptyList())
+        .queue(null, failure -> log.warn("audio failure report failed", failure));
+  }
+
   private void onEditFailure(long guildId, Throwable failure) {
     if (failure instanceof ErrorResponseException error) {
       ErrorResponse response = error.getErrorResponse();

@@ -63,6 +63,7 @@ public final class Bot {
     MusicCommands commands = new MusicCommands(playbackRef.get(), liveQueue);
     jda.addEventListener(commands);
     playbackRef.get().setQueueChangeListener(liveQueue::refreshIfPresent);
+    playbackRef.get().setTrackFailureListener(liveQueue::announceFailure);
     ImportSession.Store sessions =
         new ImportSession.Store(
             java.time.Duration.ofSeconds(config.importSessionTtlS()),

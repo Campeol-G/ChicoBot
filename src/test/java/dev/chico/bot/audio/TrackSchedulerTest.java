@@ -293,6 +293,55 @@ class TrackSchedulerTest {
   }
 
   @Test
+  void failureHandlerDefersAdvanceUntilRecoveryDecides() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler =
+        new TrackScheduler(
+            player, 200, () -> {
+            }, (ref, failed, exception) -> {
+            });
+    TrackCandidate a = candidate("a");
+    TrackCandidate b = candidate("b");
+    scheduler.queue(a);
+    scheduler.queue(b);
+
+    scheduler.onTrackException(
+        player, a.track(),
+        new FriendlyException("boom", FriendlyException.Severity.COMMON, null));
+
+    assertEquals("a", scheduler.current().orElseThrow().title());
+    assertEquals(1, scheduler.queueView().size());
+
+    scheduler.onTrackEnd(player, a.track(), AudioTrackEndReason.LOAD_FAILED);
+    assertEquals("a", scheduler.current().orElseThrow().title());
+
+    scheduler.replaceCurrent(candidate("a-recovered"));
+    assertEquals("a-recovered", scheduler.current().orElseThrow().title());
+  }
+
+  @Test
+  void skipFailedAdvancesToNext() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler =
+        new TrackScheduler(
+            player, 200, () -> {
+            }, (ref, failed, exception) -> {
+            });
+    scheduler.queue(candidate("a"));
+    scheduler.queue(candidate("b"));
+
+    scheduler.onTrackException(
+        player,
+        scheduler.current().orElseThrow().track(),
+        new FriendlyException("boom", FriendlyException.Severity.FAULT, null));
+    scheduler.skipFailed();
+
+    assertEquals("b", scheduler.current().orElseThrow().title());
+  }
+
+  @Test
   void skipToJumpsToTarget() {
     Fixture fix = fixture();
 

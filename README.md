@@ -172,6 +172,12 @@ automatically. Using YouTube with a personal bot and no monetization is the
 accepted risk; large public bots were shut down over its terms of service in
 2021, so keep this bot private and do not monetize it.
 
+Burner-account OAuth does not fix login-walled or format-dead videos (spike,
+2026-11-10). On a mid-track failure the bot reloads the track once, then tries
+a match-gated SoundCloud equivalent; if neither plays it skips and posts
+`Skipped (unplayable): <title>.` The audio health counter logs a warning when
+more than 10% of a 60 s window is silent outside track transitions.
+
 ## Offline OCR check
 
 ```bash
