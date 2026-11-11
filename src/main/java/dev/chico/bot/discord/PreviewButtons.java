@@ -131,14 +131,13 @@ public final class PreviewButtons extends ListenerAdapter {
     }
     if (remaining.isEmpty()) {
       sessions.remove(sessionId);
+      event.deferEdit().queue();
+      deletePreview(event.getHook());
       event
           .getHook()
-          .editOriginal(
-              new MessageEditBuilder()
-                  .setEmbeds(Embeds.error("Import cancelled — nothing was queued."))
-                  .setComponents(Collections.emptyList())
-                  .build())
-          .queue();
+          .sendMessage(cancelledWithRemoved(removed.size()))
+          .setEphemeral(true)
+          .queue(null, err -> log.warn("remove reply failed", err));
       return;
     }
     ImportSession updated =
@@ -148,6 +147,11 @@ public final class PreviewButtons extends ListenerAdapter {
         .editOriginal(
             previewEdit(updated.id(), updated.tracks(), updated.tracks().size(), 0))
         .queue();
+    event
+        .getHook()
+        .sendMessage(removedReport(removed.size(), remaining.size()))
+        .setEphemeral(true)
+        .queue(null, err -> log.warn("remove reply failed", err));
   }
 
   private void onCancel(ButtonInteractionEvent event, UUID sessionId) {
@@ -160,16 +164,15 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("Only the importer can do that.").setEphemeral(true).queue();
       return;
     }
+    int discarded = session.orElseThrow().tracks().size();
     sessions.remove(sessionId);
     event.deferEdit().queue();
+    deletePreview(event.getHook());
     event
         .getHook()
-        .editOriginal(
-            new MessageEditBuilder()
-                .setEmbeds(Embeds.error("Import cancelled — nothing was queued."))
-                .setComponents(Collections.emptyList())
-                .build())
-        .queue();
+        .sendMessage(cancelledReport(discarded))
+        .setEphemeral(true)
+        .queue(null, err -> log.warn("cancel reply failed", err));
   }
 
   private void onPlayAll(ButtonInteractionEvent event, UUID sessionId) {
@@ -373,12 +376,12 @@ public final class PreviewButtons extends ListenerAdapter {
               if (failure != null && ordered.isEmpty()) {
                 report = "Import failed: could not resolve any track. Try again.";
               }
-              try {
-                event.getHook().editOriginal(new MessageEditBuilder().setContent(report).build())
-                    .queue();
-              } catch (Exception e) {
-                log.warn("final edit failed", e);
-              }
+              deletePreview(event.getHook());
+              event
+                  .getHook()
+                  .sendMessage(report)
+                  .setEphemeral(true)
+                  .queue(null, err -> log.warn("final reply failed", err));
             });
   }
 
@@ -414,6 +417,23 @@ public final class PreviewButtons extends ListenerAdapter {
       }
     }
     return List.copyOf(parsed);
+  }
+
+  private static void deletePreview(
+      net.dv8tion.jda.api.interactions.InteractionHook hook) {
+    hook.deleteOriginal().queue(null, err -> log.debug("preview delete failed", err));
+  }
+
+  static String cancelledReport(int discarded) {
+    return "Import cancelled — " + discarded + " tracks discarded, nothing queued.";
+  }
+
+  static String cancelledWithRemoved(int removed) {
+    return "Removed " + removed + " items. Import cancelled — nothing queued.";
+  }
+
+  static String removedReport(int removed, int remaining) {
+    return "Removed " + removed + " (" + remaining + " remaining).";
   }
 
   private static StringSelectMenu removeMenu(UUID sessionId, List<ParsedTrack> tracks) {

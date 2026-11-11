@@ -17,6 +17,17 @@ class PreviewButtonsTest {
   }
 
   @Test
+  void reportStringsCarryCountsOnly() {
+    assertEquals(
+        "Import cancelled — 7 tracks discarded, nothing queued.",
+        PreviewButtons.cancelledReport(7));
+    assertEquals(
+        "Removed 3 items. Import cancelled — nothing queued.",
+        PreviewButtons.cancelledWithRemoved(3));
+    assertEquals("Removed 2 (5 remaining).", PreviewButtons.removedReport(2, 5));
+  }
+
+  @Test
   void removeMenuCapsAt25Options() {
     List<ParsedTrack> tracks =
         java.util.stream.IntStream.range(0, 30)
