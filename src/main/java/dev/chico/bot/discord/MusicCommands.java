@@ -101,7 +101,8 @@ public final class MusicCommands extends ListenerAdapter {
     OptionMapping option = event.getOption("query");
     if (option == null || option.getAsString().isBlank()) {
       long guildId = event.getGuild().getIdLong();
-      if (playback.isPaused(guildId)) {
+      if (playback.isPaused(guildId)
+          && event.getGuild().getAudioManager().getConnectedChannel() != null) {
         // Reuse resume: reply() keeps the same-channel guard.
         reply(event, playback.resume(guildId));
         return;

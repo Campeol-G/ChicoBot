@@ -98,6 +98,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (advancing) {
       return;
     }
+    recovering = false;
     Optional<TrackCandidate> next = queue.poll();
     if (next.isEmpty()) {
       player.stopTrack();
@@ -283,7 +284,14 @@ public final class TrackScheduler extends AudioEventAdapter {
   }
 
   /** Plays a recovered candidate in the failed track's exact position. */
-  public synchronized void replaceCurrent(TrackCandidate candidate) {
+  public synchronized boolean replaceCurrent(TrackCandidate candidate) {
+    if (!recovering
+        || current == null
+        || current.itemId() != candidate.itemId()) {
+      // The queue moved on (stop/skip/another failure): drop the recovery.
+      recovering = false;
+      return false;
+    }
     recovering = false;
     replaceCycleEntry(candidate);
     pending = candidate;
@@ -297,20 +305,26 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (!started) {
       nextTrack();
       changed();
-      return;
+      return false;
     }
     current = candidate;
     changed();
+    return true;
   }
 
-  /** Recovery gave up: skip the failed track and report it by name. */
-  public synchronized void skipFailed() {
+  /** Recovery gave up: skips only the identity it was recovering. */
+  public synchronized boolean skipFailed(long itemId) {
+    if (!recovering || current == null || current.itemId() != itemId) {
+      recovering = false;
+      return false;
+    }
     recovering = false;
-    if (loopMode == LoopMode.ALL && current != null) {
+    if (loopMode == LoopMode.ALL) {
       removeFromCycle(current.itemId());
     }
     nextTrack();
     changed();
+    return true;
   }
 
   private void replaceCycleEntry(TrackCandidate candidate) {

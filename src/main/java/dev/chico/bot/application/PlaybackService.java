@@ -819,6 +819,7 @@ public final class PlaybackService {
               if (accepted == 0) {
                 return refused("The queue is full.");
               }
+              notifyChanged(guildId);
               return new PlayResult(true, "", best);
             })
         .exceptionally(
@@ -921,15 +922,15 @@ public final class PlaybackService {
                     recovered
                         .orElseThrow()
                         .withQueueIdentity(failed.itemId(), failed.addedBy()));
-              } else {
-                scheduler.skipFailed();
+              } else if (scheduler.skipFailed(failed.itemId())) {
                 notifyTrackFailure(guildId, failed.title());
               }
             })
         .exceptionally(
             failure -> {
-              scheduler.skipFailed();
-              notifyTrackFailure(guildId, failed.title());
+              if (scheduler.skipFailed(failed.itemId())) {
+                notifyTrackFailure(guildId, failed.title());
+              }
               return null;
             });
   }

@@ -1,6 +1,7 @@
 package dev.chico.bot.audio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
@@ -336,8 +337,52 @@ class TrackSchedulerTest {
         player,
         scheduler.current().orElseThrow().track(),
         new FriendlyException("boom", FriendlyException.Severity.FAULT, null));
-    scheduler.skipFailed();
+    assertTrue(scheduler.skipFailed(scheduler.current().orElseThrow().itemId()));
 
+    assertEquals("b", scheduler.current().orElseThrow().title());
+  }
+
+  @Test
+  void recoveryAfterStopIsDropped() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler =
+        new TrackScheduler(
+            player, 200, () -> {
+            }, (ref, failed, exception) -> {
+            });
+    TrackCandidate a = candidate("a").withQueueIdentity(1L, 0L);
+    scheduler.queue(a);
+    scheduler.onTrackException(
+        player, a.track(),
+        new FriendlyException("boom", FriendlyException.Severity.COMMON, null));
+
+    scheduler.stopAndClear();
+
+    assertFalse(scheduler.replaceCurrent(candidate("a-recovered").withQueueIdentity(1L, 0L)));
+    assertTrue(scheduler.current().isEmpty());
+  }
+
+  @Test
+  void recoverySkipDoesNotHitAManuallySkippedTrack() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler =
+        new TrackScheduler(
+            player, 200, () -> {
+            }, (ref, failed, exception) -> {
+            });
+    TrackCandidate a = candidate("a").withQueueIdentity(1L, 0L);
+    TrackCandidate b = candidate("b").withQueueIdentity(2L, 0L);
+    scheduler.queue(a);
+    scheduler.queue(b);
+    scheduler.onTrackException(
+        player, a.track(),
+        new FriendlyException("boom", FriendlyException.Severity.COMMON, null));
+
+    scheduler.nextTrack();
+
+    assertFalse(scheduler.skipFailed(1L));
     assertEquals("b", scheduler.current().orElseThrow().title());
   }
 
