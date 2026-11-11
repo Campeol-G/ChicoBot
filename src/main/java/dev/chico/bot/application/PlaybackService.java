@@ -373,6 +373,14 @@ public final class PlaybackService {
             && music.scheduler().queueView().size() == 0);
   }
 
+  /** A track exists in the player and is paused. */
+  public boolean isPaused(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    return music != null
+        && music.player().getPlayingTrack() != null
+        && music.player().isPaused();
+  }
+
   public String leave(long guildId) {
     GuildMusicManager music = managers.remove(guildId);
     if (music != null) {

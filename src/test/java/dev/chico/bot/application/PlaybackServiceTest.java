@@ -312,6 +312,21 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void isPausedReflectsPlayerState() {
+    PlaybackService service = service();
+    assertFalse(service.isPaused(1L));
+
+    service.enqueueResolved(1L, List.of(candidate("Alpha")));
+    assertFalse(service.isPaused(1L));
+
+    assertEquals("Paused.", service.pause(1L));
+    assertTrue(service.isPaused(1L));
+
+    assertEquals("Resumed.", service.resume(1L));
+    assertFalse(service.isPaused(1L));
+  }
+
+  @Test
   void loopRepliesFollowTargetSemantics() {
     PlaybackService service = service();
     service.enqueueResolved(1L, List.of(candidate("Alpha"), candidate("Beta")));

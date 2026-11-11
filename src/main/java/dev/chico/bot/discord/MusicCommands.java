@@ -97,7 +97,13 @@ public final class MusicCommands extends ListenerAdapter {
       return;
     }
     OptionMapping option = event.getOption("query");
-    if (option == null) {
+    if (option == null || option.getAsString().isBlank()) {
+      long guildId = event.getGuild().getIdLong();
+      if (playback.isPaused(guildId)) {
+        // Reuse resume: reply() keeps the same-channel guard.
+        reply(event, playback.resume(guildId));
+        return;
+      }
       event.reply("Tell me what to play: `/play <song name or link>`.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
