@@ -1,6 +1,7 @@
 package dev.chico.bot.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -153,6 +154,59 @@ class ImportFromImageTest {
     assertEquals(10, result.tracks().size());
     assertEquals(10, result.totalDetected());
     assertEquals(1, result.droppedImages());
+  }
+
+  @Test
+  void codeScreenshotBecomesNoTracks() throws Exception {
+    byte[] png = tinyPng();
+    var ocr =
+        new FakeOcr(
+            List.of(
+                lines(
+                    List.of(
+                        "$ sudo apt update",
+                        "sudo apt install openjdk-21-jdk",
+                        "--no-install-recommends",
+                        "Requirements",
+                        "Java 26 or newer",
+                        "public class Main {",
+                        "return value;",
+                        "mvn -q package -DskipTests",
+                        "java -jar target/chicos-bot.jar"))));
+
+    var failure =
+        assertThrows(
+            CompletionException.class,
+            () -> flow(new FakeDownloader(png), ocr).run(7L, 9L, List.of(attachment("a.png"))).join());
+
+    var cause = (ImportFromImage.ImportException) failure.getCause();
+    assertEquals(ImportFromImage.Reason.NO_TRACKS, cause.reason());
+  }
+
+  @Test
+  void mixedScreenshotWarnsAndKeepsMusic() throws Exception {
+    byte[] png = tinyPng();
+    var ocr =
+        new FakeOcr(
+            List.of(
+                lines(
+                    List.of(
+                        "$ docker compose up -d",
+                        "Requirements",
+                        "npm install --save-dev",
+                        "Alpha",
+                        "Bravo",
+                        "Charlie",
+                        "Delta",
+                        "Echo",
+                        "Foxtrot",
+                        "Golf"))));
+
+    var result = flow(new FakeDownloader(png), ocr).run(7L, 9L, List.of(attachment("a.png"))).join();
+
+    assertTrue(result.warned());
+    assertEquals(3, result.suspiciousDropped());
+    assertEquals(7, result.tracks().size());
   }
 
   @Test

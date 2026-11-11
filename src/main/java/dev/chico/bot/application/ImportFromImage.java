@@ -6,6 +6,7 @@ import dev.chico.bot.ocr.OcrEngine;
 import dev.chico.bot.ocr.OcrException;
 import dev.chico.bot.ocr.OcrResult;
 import dev.chico.bot.parser.ParsedTrack;
+import dev.chico.bot.parser.NonMusicGuard;
 import dev.chico.bot.parser.TrackLineParser;
 import dev.chico.bot.parser.TrackListMerger;
 import dev.chico.bot.security.AttachmentPolicy;
@@ -53,7 +54,17 @@ public final class ImportFromImage {
 
   /** Session id, the capped preview list, the post-dedup count and dropped image count. */
   public record ImportResult(
-      UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
+      UUID sessionId,
+      List<ParsedTrack> tracks,
+      int totalDetected,
+      int droppedImages,
+      boolean warned,
+      int suspiciousDropped) {
+
+    public ImportResult(
+        UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
+      this(sessionId, tracks, totalDetected, droppedImages, false, 0);
+    }
   }
 
   private static final ExecutorService EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
@@ -155,21 +166,37 @@ public final class ImportFromImage {
         progress.onImage(index, first.size());
       }
       List<ParsedTrack> merged = TrackListMerger.merge(perImage);
-      int total = merged.size();
-      List<ParsedTrack> capped = merged.stream().limit(maxTracks).toList();
+      NonMusicGuard.Result guard = NonMusicGuard.evaluate(merged);
+      if (guard.verdict() == NonMusicGuard.Verdict.REJECT) {
+        throw new ImportException(
+            Reason.NO_TRACKS,
+            "This looks like code or an article, not a playlist. Send a playlist screenshot.");
+      }
+      List<ParsedTrack> usable =
+          guard.verdict() == NonMusicGuard.Verdict.WARN ? guard.kept() : merged;
+      int total = usable.size();
+      List<ParsedTrack> capped = usable.stream().limit(maxTracks).toList();
       if (capped.isEmpty()) {
         throw new ImportException(Reason.NO_TRACKS, "No tracks found in that image.");
       }
       ImportSession session = sessions.create(userId, guildId, capped);
       log.info(
-          "import {} images={} tracks={} total={} dropped={} elapsedMs={}",
+          "import {} images={} tracks={} total={} dropped={} suspicious={} warned={} elapsedMs={}",
           correlation,
           first.size(),
           capped.size(),
           total,
           dropped,
+          guard.dropped(),
+          guard.verdict() == NonMusicGuard.Verdict.WARN,
           System.currentTimeMillis() - start);
-      return new ImportResult(session.id(), capped, total, dropped);
+      return new ImportResult(
+          session.id(),
+          capped,
+          total,
+          dropped,
+          guard.verdict() == NonMusicGuard.Verdict.WARN,
+          guard.dropped());
     } finally {
       org.slf4j.MDC.clear();
     }

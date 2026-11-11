@@ -158,7 +158,8 @@ public final class MessageListener extends ListenerAdapter {
                                 .editMessage(
                                     PreviewButtons.previewMessage(
                                         result.sessionId(), result.tracks(),
-                                        result.totalDetected(), result.droppedImages()))
+                                        result.totalDetected(), result.droppedImages(),
+                                        result.warned(), result.suspiciousDropped()))
                                 .queue())
                     .exceptionally(
                         failure -> {

@@ -62,13 +62,25 @@ public final class PreviewButtons extends ListenerAdapter {
   /** Preview embed plus Play all / Cancel buttons and the remove select menu. */
   public static MessageEditData previewMessage(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
-    return previewEdit(sessionId, tracks, totalDetected, 0);
+    return previewEdit(sessionId, tracks, totalDetected, 0, false, 0);
   }
 
   /** Preview embed with dropped-image count. */
   public static MessageEditData previewMessage(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
-    return previewEdit(sessionId, tracks, totalDetected, droppedImages);
+    return previewEdit(sessionId, tracks, totalDetected, droppedImages, false, 0);
+  }
+
+  /** Preview embed with the non-music warning banner. */
+  public static MessageEditData previewMessage(
+      UUID sessionId,
+      List<ParsedTrack> tracks,
+      int totalDetected,
+      int droppedImages,
+      boolean warned,
+      int suspiciousDropped) {
+    return previewEdit(
+        sessionId, tracks, totalDetected, droppedImages, warned, suspiciousDropped);
   }
 
   /** Same preview as a fresh message (for the context menu flow). */
@@ -80,8 +92,21 @@ public final class PreviewButtons extends ListenerAdapter {
   /** Same preview as a fresh message with dropped-image count. */
   public static MessageCreateData previewCreate(
       UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
+    return previewCreate(sessionId, tracks, totalDetected, droppedImages, false, 0);
+  }
+
+  /** Same preview with the non-music warning banner. */
+  public static MessageCreateData previewCreate(
+      UUID sessionId,
+      List<ParsedTrack> tracks,
+      int totalDetected,
+      int droppedImages,
+      boolean warned,
+      int suspiciousDropped) {
     return new MessageCreateBuilder()
-        .setEmbeds(Embeds.importPreview(tracks, totalDetected, droppedImages))
+        .setEmbeds(
+            Embeds.importPreview(
+                tracks, totalDetected, droppedImages, warned, suspiciousDropped))
         .setComponents(previewComponents(sessionId, tracks))
         .setAllowedMentions(Collections.emptyList())
         .build();
@@ -145,7 +170,8 @@ public final class PreviewButtons extends ListenerAdapter {
     event
         .getHook()
         .editOriginal(
-            previewEdit(updated.id(), updated.tracks(), updated.tracks().size(), 0))
+            previewEdit(
+                updated.id(), updated.tracks(), updated.tracks().size(), 0, false, 0))
         .queue();
     event
         .getHook()
@@ -386,9 +412,16 @@ public final class PreviewButtons extends ListenerAdapter {
   }
 
   private static net.dv8tion.jda.api.utils.messages.MessageEditData previewEdit(
-      UUID sessionId, List<ParsedTrack> tracks, int total, int droppedImages) {
+      UUID sessionId,
+      List<ParsedTrack> tracks,
+      int total,
+      int droppedImages,
+      boolean warned,
+      int suspiciousDropped) {
     return new MessageEditBuilder()
-        .setEmbeds(Embeds.importPreview(tracks, total, droppedImages))
+        .setEmbeds(
+            Embeds.importPreview(
+                tracks, total, droppedImages, warned, suspiciousDropped))
         .setComponents(previewComponents(sessionId, tracks))
         .setAllowedMentions(Collections.emptyList())
         .build();

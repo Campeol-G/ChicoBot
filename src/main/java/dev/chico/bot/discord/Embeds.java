@@ -92,8 +92,26 @@ public final class Embeds {
   /** Preview of an image import with dropped-image count. Every track name is escaped here. */
   public static MessageEmbed importPreview(
       List<dev.chico.bot.parser.ParsedTrack> tracks, int totalDetected, int droppedImages) {
+    return importPreview(tracks, totalDetected, droppedImages, false, 0);
+  }
+
+  /** Same, with the non-music warning banner and skipped-line count. */
+  public static MessageEmbed importPreview(
+      List<dev.chico.bot.parser.ParsedTrack> tracks,
+      int totalDetected,
+      int droppedImages,
+      boolean warned,
+      int suspiciousDropped) {
     EmbedBuilder builder = new EmbedBuilder().setTitle("Import preview").setColor(Color.BLUE);
     StringBuilder lines = new StringBuilder();
+    if (warned) {
+      lines
+          .append("⚠ This doesn't look like a playlist — ")
+          .append(suspiciousDropped)
+          .append(" lines skipped. Are these the songs you'd like to listen?")
+          .append(" Press Play all to confirm.")
+          .append("\n\n");
+    }
     for (int i = 0; i < tracks.size(); i++) {
       dev.chico.bot.parser.ParsedTrack track = tracks.get(i);
       lines.append(i + 1).append(". ").append(TextSanitizer.escape(track.title()));
