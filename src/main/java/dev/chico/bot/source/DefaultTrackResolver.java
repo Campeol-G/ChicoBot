@@ -137,16 +137,13 @@ public final class DefaultTrackResolver implements TrackResolver {
     if (loader == null) {
       return CompletableFuture.completedFuture(List.of());
     }
-    return withTimeout(loader.loadPlaylist(query.uri()))
+    // POR QUE: one loader call fetches the whole list; the per-track budget
+    // is too short for large playlists.
+    return withTimeout(loader.loadPlaylist(query.uri()), resolveTimeout.multipliedBy(4))
         .thenApply(
             candidates -> {
               breaker.recordSuccess(query.source());
               return candidates;
-            })
-        .exceptionally(
-            failure -> {
-              breaker.recordFailure(query.source());
-              return List.of();
             });
   }
 
@@ -405,6 +402,11 @@ public final class DefaultTrackResolver implements TrackResolver {
   }
 
   private <T> CompletableFuture<T> withTimeout(CompletableFuture<T> future) {
-    return future.orTimeout(resolveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+    return withTimeout(future, resolveTimeout);
+  }
+
+  private <T> CompletableFuture<T> withTimeout(
+      CompletableFuture<T> future, Duration timeout) {
+    return future.orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS);
   }
 }

@@ -74,6 +74,7 @@ public final class PlaybackService {
   private final Ranker ranker;
   private final AudioRecovery audioRecovery;
   private final VoteStore votes;
+  private final java.util.concurrent.Semaphore fallbackSlots;
   private final Map<Long, Map<Long, Integer>> failureAttempts = new ConcurrentHashMap<>();
   private final RateLimiter rateLimiter = new RateLimiter();
   private final Clock clock;
@@ -139,6 +140,8 @@ public final class PlaybackService {
     this.audioRecovery =
         new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
     this.votes = new VoteStore(clock);
+    this.fallbackSlots =
+        new java.util.concurrent.Semaphore(Math.max(1, config.resolveConcurrency()));
   }
 
   PlaybackService(
@@ -163,6 +166,8 @@ public final class PlaybackService {
     this.audioRecovery =
         new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
     this.votes = new VoteStore(clock);
+    this.fallbackSlots =
+        new java.util.concurrent.Semaphore(Math.max(1, config.resolveConcurrency()));
   }
 
   public AudioPlayerSendHandler sendHandler(long guildId) {
@@ -370,6 +375,10 @@ public final class PlaybackService {
           .spotifyContent(spotifyQuery)
           .thenCompose(
               content -> {
+                if (content.transientError()) {
+                  return CompletableFuture.completedFuture(
+                      refused("Search failed. Try again later."));
+                }
                 if (content.kind() == dev.chico.bot.source.SpotifyClient.Kind.PLAYLIST
                     || content.unavailable()) {
                   PlaylistPreview preview =
@@ -696,6 +705,7 @@ public final class PlaybackService {
     }
     String removedTitle;
     int displayPosition;
+    boolean clearedLoop = false;
     // POR QUE: lookup and removal share one lock so a track end between
     // them cannot shift the target or resurrect the confirmation.
     synchronized (music.scheduler()) {
@@ -718,6 +728,7 @@ public final class PlaybackService {
       if (voteReply != null) {
         return voteReply;
       }
+      clearedLoop = music.scheduler().loopMarked(queued.get(queueIndex).itemId());
       Optional<TrackCandidate> removed = music.scheduler().removeAt(queueIndex);
       if (removed.isEmpty()) {
         return "No queued track matches that.";
@@ -734,11 +745,13 @@ public final class PlaybackService {
       }
     }
     notifyChanged(guildId);
+    String loopNote = clearedLoop ? " Loop cleared (track removed)." : "";
     return "Removed "
         + dev.chico.bot.security.TextSanitizer.escape(removedTitle)
         + " (position "
         + displayPosition
-        + ").";
+        + ")."
+        + loopNote;
   }
 
   public QueueView queueView(long guildId) {
@@ -889,13 +902,29 @@ public final class PlaybackService {
   private GuildMusicManager musicManager(long guildId) {
     return managers.computeIfAbsent(
         guildId,
-        id ->
-            new GuildMusicManager(
-                playerManager,
-                queueMax,
-                () -> notifyChanged(id),
-                (scheduler, failed, failure) ->
-                    handleTrackFailure(id, scheduler, failed, failure)));
+        id -> {
+          GuildMusicManager manager =
+              new GuildMusicManager(
+                  playerManager,
+                  queueMax,
+                  () -> notifyChanged(id),
+                  (scheduler, failed, failure) ->
+                      handleTrackFailure(id, scheduler, failed, failure));
+          manager
+              .scheduler()
+              .setStartedHandler(candidate -> clearFailureAttempt(id, candidate.itemId()));
+          return manager;
+        });
+  }
+
+  private void clearFailureAttempt(long guildId, long itemId) {
+    Map<Long, Integer> attempts = failureAttempts.get(guildId);
+    if (attempts != null) {
+      attempts.remove(itemId);
+      if (attempts.isEmpty()) {
+        failureAttempts.remove(guildId, attempts);
+      }
+    }
   }
 
   private void handleTrackFailure(
@@ -947,7 +976,19 @@ public final class PlaybackService {
   }
 
   private CompletableFuture<List<TrackCandidate>> searchFallback(String text) {
-    return resolver.resolve(new TextQuery(text));
+    // Fail fast when all resolve slots are busy; the scheduler reports a
+    // named skip instead of blocking the Lavaplayer callback thread.
+    if (!fallbackSlots.tryAcquire()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+    try {
+      return resolver
+          .resolve(new TextQuery(text))
+          .whenComplete((candidates, failure) -> fallbackSlots.release());
+    } catch (RuntimeException failure) {
+      fallbackSlots.release();
+      return CompletableFuture.completedFuture(List.of());
+    }
   }
 
   private void notifyTrackFailure(long guildId, String title) {

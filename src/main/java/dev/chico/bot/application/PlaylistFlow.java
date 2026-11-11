@@ -58,7 +58,30 @@ public final class PlaylistFlow {
                       .toList(),
                   accepted.singleTrack());
             })
-        .exceptionally(failure -> PlaylistPreview.error("Search failed. Try again later."));
+        .exceptionally(
+            failure -> playlistFailure(failure));
+  }
+
+  private static PlaylistPreview playlistFailure(Throwable failure) {
+    Throwable cause =
+        failure instanceof java.util.concurrent.CompletionException
+            ? failure.getCause()
+            : failure;
+    if (cause instanceof com.sedmelluq.discord.lavaplayer.tools.FriendlyException
+        && isPrivateMessage(cause.getMessage())) {
+      return PlaylistPreview.error("That playlist is private or unavailable.");
+    }
+    return PlaylistPreview.error("Search failed. Try again later.");
+  }
+
+  private static boolean isPrivateMessage(String message) {
+    if (message == null) {
+      return false;
+    }
+    String lowered = message.toLowerCase(java.util.Locale.ROOT);
+    return lowered.contains("private")
+        || lowered.contains("unavailable")
+        || lowered.contains("not available");
   }
 
   public Optional<PlaylistSession> get(UUID id) {
@@ -83,6 +106,9 @@ public final class PlaylistFlow {
   }
 
   private static PlaylistPreview spotifyPreview(SpotifyClient.Content content) {
+    if (content.transientError()) {
+      return PlaylistPreview.error("Search failed. Try again later.");
+    }
     if (content.unavailable()) {
       return PlaylistPreview.error("That playlist is private or unavailable.");
     }

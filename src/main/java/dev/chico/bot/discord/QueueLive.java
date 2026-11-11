@@ -58,36 +58,49 @@ public final class QueueLive {
   }
 
   /** Deletes the previous live and posts a fresh one, deleting before send. */
-  public void post(long guildId, MessageChannel channel) {
+  public CompletableFuture<Boolean> post(long guildId, MessageChannel channel) {
+    CompletableFuture<Boolean> result = new CompletableFuture<>();
     postChains.compute(
         guildId,
         (id, previous) -> {
           CompletableFuture<Void> base =
               previous == null ? CompletableFuture.completedFuture(null) : previous;
-          return base.thenCompose(
-              ignored -> {
-                store
-                    .get(guildId)
-                    .ifPresent(old -> deleteQuietly(old));
-                store.remove(guildId);
-                CompletableFuture<Void> sent = new CompletableFuture<>();
-                channel
-                    .sendMessageEmbeds(embed(guildId))
-                    .setAllowedMentions(Collections.emptyList())
-                    .queue(
-                        message -> {
-                          store.replace(
-                              guildId,
-                              new Entry(channel.getIdLong(), message.getIdLong()));
-                          sent.complete(null);
-                        },
-                        failure -> {
-                          log.warn("live queue post failed", failure);
-                          sent.complete(null);
-                        });
-                return sent;
+          CompletableFuture<Void> chain =
+              base.thenCompose(
+                  ignored -> {
+                    store
+                        .get(guildId)
+                        .ifPresent(old -> deleteQuietly(old));
+                    store.remove(guildId);
+                    CompletableFuture<Void> sent = new CompletableFuture<>();
+                    channel
+                        .sendMessageEmbeds(embed(guildId))
+                        .setAllowedMentions(Collections.emptyList())
+                        .queue(
+                            message -> {
+                              store.replace(
+                                  guildId,
+                                  new Entry(channel.getIdLong(), message.getIdLong()));
+                              result.complete(true);
+                              sent.complete(null);
+                            },
+                            failure -> {
+                              log.warn("live queue post failed", failure);
+                              result.complete(false);
+                              sent.complete(null);
+                            });
+                    return sent;
+                  });
+          chain.whenComplete(
+              (ignored, failure) -> {
+                if (failure != null) {
+                  log.warn("live queue post chain failed", failure);
+                  result.complete(false);
+                }
               });
+          return chain.exceptionally(failure -> null);
         });
+    return result;
   }
 
   /** Edits the stored live message, if any. Never throws to the caller. */
@@ -109,7 +122,9 @@ public final class QueueLive {
                           .setEmbeds(embed(guildId))
                           .setAllowedMentions(Collections.emptyList())
                           .build())
-                  .queue(null, failure -> onEditFailure(guildId, failure));
+                  .queue(
+                      null,
+                      failure -> onEditFailure(guildId, entry.messageId(), failure));
             });
   }
 
@@ -136,12 +151,17 @@ public final class QueueLive {
         .queue(null, failure -> log.warn("audio failure report failed", failure));
   }
 
-  private void onEditFailure(long guildId, Throwable failure) {
+  private void onEditFailure(long guildId, long messageId, Throwable failure) {
     if (failure instanceof ErrorResponseException error) {
       ErrorResponse response = error.getErrorResponse();
       if (response == ErrorResponse.UNKNOWN_MESSAGE
           || response == ErrorResponse.UNKNOWN_CHANNEL) {
-        store.remove(guildId);
+        // Only drop the entry this edit belonged to; a newer /queue may have
+        // replaced it while this edit was in flight.
+        store
+            .get(guildId)
+            .filter(current -> current.messageId() == messageId)
+            .ifPresent(current -> store.remove(guildId));
         return;
       }
     }
@@ -158,7 +178,8 @@ public final class QueueLive {
         .queue(null, failure -> log.debug("live queue delete failed", failure));
   }
 
-  private net.dv8tion.jda.api.entities.MessageEmbed embed(long guildId) {
+  /** Current queue embed; used for the `/queue` fallback on send failure. */
+  public net.dv8tion.jda.api.entities.MessageEmbed embed(long guildId) {
     PlaybackService.QueueView view = playback.queueView(guildId);
     List<TrackCandidate> all = new ArrayList<>();
     view.current().ifPresent(all::add);

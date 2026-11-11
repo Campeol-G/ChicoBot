@@ -219,6 +219,22 @@ class TrackSchedulerTest {
   }
 
   @Test
+  void naturalDrainNotifiesQueueChange() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    java.util.concurrent.atomic.AtomicInteger changes =
+        new java.util.concurrent.atomic.AtomicInteger();
+    TrackScheduler scheduler = new TrackScheduler(player, 200, changes::incrementAndGet);
+    TrackCandidate a = candidate("a");
+    scheduler.queue(a);
+
+    scheduler.onTrackEnd(player, a.track(), AudioTrackEndReason.FINISHED);
+
+    assertTrue(scheduler.current().isEmpty());
+    assertTrue(changes.get() >= 1);
+  }
+
+  @Test
   void loopCurrentReplaysCloneOnEnd() {
     Fixture fix = fixture();
 

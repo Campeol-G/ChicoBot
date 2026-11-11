@@ -30,7 +30,12 @@ public final class SpotifyClient {
   }
 
   /** Resolved link: one search string, a playlist list, or unsupported. */
-  public record Content(Kind kind, List<String> tracks, boolean unavailable) {
+  public record Content(
+      Kind kind, List<String> tracks, boolean unavailable, boolean transientError) {
+
+    public Content(Kind kind, List<String> tracks, boolean unavailable) {
+      this(kind, tracks, unavailable, false);
+    }
 
     static Content track(String title) {
       return new Content(Kind.TRACK, List.of(title), false);
@@ -47,9 +52,13 @@ public final class SpotifyClient {
     static Content unsupported() {
       return new Content(Kind.UNSUPPORTED, List.of(), false);
     }
+
+    static Content transientFailure() {
+      return new Content(Kind.UNSUPPORTED, List.of(), false, true);
+    }
   }
 
-  private static final int PAGE_SIZE = 100;
+  private static final int PAGE_SIZE = 50;
 
   private final HttpClient http;
   private final Clock clock;
@@ -66,7 +75,7 @@ public final class SpotifyClient {
   public SpotifyClient(
       String clientId, String clientSecret, Duration timeout) {
     this(
-        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
         Clock.systemUTC(),
         timeout,
         clientId,
@@ -113,13 +122,16 @@ public final class SpotifyClient {
     return getJson("/tracks/" + id, true)
         .thenApply(
             json -> {
-              if (json.status() != 200) {
+              if (json.status() == 200) {
+                String title = artistTitle(json.body());
+                return title == null ? Content.transientFailure() : Content.track(title);
+              }
+              if (json.status() == 403 || json.status() == 404) {
                 return Content.unsupported();
               }
-              String title = artistTitle(json.body());
-              return title == null ? Content.unsupported() : Content.track(title);
+              return Content.transientFailure();
             })
-        .exceptionally(failure -> Content.unsupported());
+        .exceptionally(failure -> Content.transientFailure());
   }
 
   public CompletableFuture<Content> playlist(String id) {
@@ -132,7 +144,7 @@ public final class SpotifyClient {
                   failure instanceof CompletionException ? failure.getCause() : failure;
               return cause instanceof UnavailablePlaylistException
                   ? Content.unavailablePlaylist()
-                  : Content.unsupported();
+                  : Content.transientFailure();
             });
   }
 
@@ -150,19 +162,25 @@ public final class SpotifyClient {
                     new IllegalStateException("Spotify playlist status " + json.status()));
               }
               List<JsonBrowser> items = json.body().get("items").values();
-              int added = 0;
               for (JsonBrowser item : items) {
                 JsonBrowser track = item.get("track");
                 String title = artistTitle(track);
                 if (title != null) {
                   tracks.add(title);
-                  added++;
                 }
               }
-              if (items.size() < PAGE_SIZE || added == 0) {
+              if (items.isEmpty()) {
                 return CompletableFuture.completedFuture(null);
               }
-              return playlistPage(id, offset + PAGE_SIZE, tracks);
+              long total = json.body().get("total").asLong(-1);
+              boolean more =
+                  total >= 0
+                      ? (long) offset + items.size() < total
+                      : items.size() >= PAGE_SIZE;
+              if (!more) {
+                return CompletableFuture.completedFuture(null);
+              }
+              return playlistPage(id, offset + items.size(), tracks);
             });
   }
 
@@ -178,12 +196,28 @@ public final class SpotifyClient {
     return artist.strip() + " - " + name.strip();
   }
 
-  private CompletableFuture<Content> followShortLink(URI uri) {
+  CompletableFuture<Content> followShortLink(URI uri) {
     HttpRequest request = HttpRequest.newBuilder(uri).timeout(timeout).GET().build();
     return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
         .thenCompose(
             response -> {
-              Optional<Ref> ref = parseOpenSpotify(response.uri());
+              if (response.statusCode() < 300 || response.statusCode() >= 400) {
+                return CompletableFuture.completedFuture(Content.unsupported());
+              }
+              String location = response.headers().firstValue("Location").orElse("");
+              if (location.isBlank()) {
+                return CompletableFuture.completedFuture(Content.unsupported());
+              }
+              URI target = uri.resolve(location);
+              if (target.getScheme() == null
+                  || !target.getScheme().equalsIgnoreCase("https")
+                  || target.getHost() == null
+                  || !target.getHost().equalsIgnoreCase("open.spotify.com")) {
+                // POR QUE: only spotify.link -> open.spotify.com is allowed;
+                // never fetch an arbitrary redirect target.
+                return CompletableFuture.completedFuture(Content.unsupported());
+              }
+              Optional<Ref> ref = parseOpenSpotify(target);
               if (ref.isEmpty()) {
                 return CompletableFuture.completedFuture(Content.unsupported());
               }
@@ -193,7 +227,7 @@ public final class SpotifyClient {
                 default -> CompletableFuture.completedFuture(Content.unsupported());
               };
             })
-        .exceptionally(failure -> Content.unsupported());
+        .exceptionally(failure -> Content.transientFailure());
   }
 
   private record Ref(String kind, String id) {
@@ -261,7 +295,9 @@ public final class SpotifyClient {
     return response.headers().firstValue("Retry-After")
         .map(value -> {
           try {
-            return Math.min(5, Math.max(0, Long.parseLong(value.strip())));
+            // shortcut: cap the wait at 30s, longer Spotify waits are rare,
+            // upgrade to async scheduling if that changes.
+            return Math.min(30, Math.max(0, Long.parseLong(value.strip())));
           } catch (NumberFormatException ignored) {
             return 1L;
           }

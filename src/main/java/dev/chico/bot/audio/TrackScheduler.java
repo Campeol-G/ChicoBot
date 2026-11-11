@@ -37,6 +37,9 @@ public final class TrackScheduler extends AudioEventAdapter {
   private final TrackQueue<TrackCandidate> queue;
   private final Runnable onChange;
   private final TrackFailureHandler failureHandler;
+  private volatile java.util.function.Consumer<TrackCandidate> startedHandler =
+      candidate -> {
+      };
   private volatile TrackCandidate current;
   private volatile TrackCandidate pending;
   private volatile boolean advancing;
@@ -104,6 +107,7 @@ public final class TrackScheduler extends AudioEventAdapter {
       player.stopTrack();
       current = null;
       pending = null;
+      changed();
       return;
     }
     pending = next.orElseThrow();
@@ -168,6 +172,11 @@ public final class TrackScheduler extends AudioEventAdapter {
     return new LoopView(loopMode, loopMarkedAdvances + 1);
   }
 
+  /** True when removing this identity would disarm a single-track loop. */
+  public synchronized boolean loopMarked(long itemId) {
+    return loopMode == LoopMode.SINGLE && loopMarkedItemId == itemId;
+  }
+
   /** Loops whatever is playing now. */
   public synchronized Optional<TrackCandidate> loopCurrent() {
     if (current == null) {
@@ -228,7 +237,21 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (pending != null && pending.track() == track) {
       current = pending;
     }
+    if (current != null) {
+      try {
+        startedHandler.accept(current);
+      } catch (RuntimeException ignored) {
+        // Bookkeeping must never break playback.
+      }
+    }
     changed();
+  }
+
+  /** Called on every successful track start, e.g. to clear failure counters. */
+  public void setStartedHandler(
+      java.util.function.Consumer<TrackCandidate> handler) {
+    this.startedHandler = handler == null ? candidate -> {
+    } : handler;
   }
 
   @Override

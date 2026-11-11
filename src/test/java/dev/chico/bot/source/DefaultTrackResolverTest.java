@@ -41,6 +41,7 @@ class DefaultTrackResolverTest {
     volatile boolean searchHangs;
     volatile List<TrackCandidate> urlResult = List.of();
     volatile Throwable urlFailure;
+    volatile List<TrackCandidate> playlistResult = List.of();
     final java.util.Queue<Throwable> urlFailureQueue = new java.util.ArrayDeque<>();
 
     FakeLoader(Source source) {
@@ -86,6 +87,11 @@ class DefaultTrackResolverTest {
         return failed;
       }
       return CompletableFuture.completedFuture(urlResult);
+    }
+
+    @Override
+    public CompletableFuture<List<TrackCandidate>> loadPlaylist(URI uri) {
+      return CompletableFuture.completedFuture(playlistResult);
     }
   }
 
@@ -659,6 +665,27 @@ class DefaultTrackResolverTest {
         .get();
 
     assertEquals(1, soundcloud.urlLoads.get());
+  }
+
+  @Test
+  void resolvePlaylistReturnsEveryTrack() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.playlistResult =
+        List.of(
+            candidate(Source.YOUTUBE, "One", "Artist"),
+            candidate(Source.YOUTUBE, "Two", "Artist"),
+            candidate(Source.YOUTUBE, "Three", "Artist"));
+    DefaultTrackResolver resolver =
+        resolver(youtube, soundcloud, Duration.ofSeconds(5), 3);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolvePlaylist(
+                new UrlQuery(Source.YOUTUBE, URI.create("https://youtube.com/playlist?list=PLx")))
+            .get();
+
+    assertEquals(3, result.size());
   }
 
   @Test

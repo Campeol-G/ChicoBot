@@ -30,6 +30,7 @@ class SpotifyClientTest {
   private String baseUrl;
   private final AtomicInteger tokenRequests = new AtomicInteger();
   private final AtomicInteger expiredCalls = new AtomicInteger();
+  private final AtomicInteger limitedCalls = new AtomicInteger();
 
   @BeforeEach
   void startServer() throws IOException {
@@ -47,21 +48,42 @@ class SpotifyClientTest {
       }
     });
     server.createContext("/v1/tracks/missing", exchange -> respond(exchange, 404, "{}"));
+    server.createContext("/v1/tracks/broken", exchange -> respond(exchange, 500, "{}"));
+    server.createContext("/v1/tracks/limited", exchange -> {
+      if (limitedCalls.getAndIncrement() == 0) {
+        exchange.getResponseHeaders().set("Retry-After", "0");
+        respond(exchange, 429, "{}");
+      } else {
+        respond(exchange, 200, TRACK_JSON);
+      }
+    });
+    server.createContext("/short", exchange -> {
+      exchange.getResponseHeaders().set("Location", "https://open.spotify.com/track/track1");
+      exchange.sendResponseHeaders(302, -1);
+      exchange.close();
+    });
+    server.createContext("/short-evil", exchange -> {
+      exchange.getResponseHeaders().set("Location", "https://example.com/x");
+      exchange.sendResponseHeaders(302, -1);
+      exchange.close();
+    });
     server.createContext("/v1/playlists/private/tracks", exchange -> respond(exchange, 404, "{}"));
     server.createContext("/v1/playlists/list1/tracks", exchange -> {
       String query = exchange.getRequestURI().getQuery();
-      boolean secondPage = query != null && query.contains("offset=100");
-      if (secondPage) {
-        respond(exchange, 200, page(1));
+      boolean firstPage = query == null || query.contains("offset=0");
+      if (firstPage) {
+        respond(exchange, 200, page(50));
       } else {
-        respond(exchange, 200, page(100));
+        respond(exchange, 200, page(1));
       }
     });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     client =
         new SpotifyClient(
-            HttpClient.newHttpClient(),
+            HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build(),
             Clock.systemUTC(),
             Duration.ofSeconds(5),
             "id",
@@ -135,7 +157,7 @@ class SpotifyClientTest {
     SpotifyClient.Content content = client.playlist("list1").get();
 
     assertEquals(SpotifyClient.Kind.PLAYLIST, content.kind());
-    assertEquals(101, content.tracks().size());
+    assertEquals(51, content.tracks().size());
     assertTrue(content.tracks().stream().allMatch("Artist - Song"::equals));
   }
 
@@ -145,6 +167,31 @@ class SpotifyClientTest {
 
     assertTrue(content.unavailable());
     assertEquals(SpotifyClient.Kind.PLAYLIST, content.kind());
+  }
+
+  @Test
+  void rateLimitedRequestRetriesOnce() throws Exception {
+    SpotifyClient.Content content = client.track("limited").get();
+
+    assertEquals(SpotifyClient.Kind.TRACK, content.kind());
+    assertEquals(2, limitedCalls.get());
+  }
+
+  @Test
+  void serverErrorIsTransient() throws Exception {
+    assertTrue(client.track("broken").get().transientError());
+  }
+
+  @Test
+  void shortLinkFollowsOnlyOpenSpotify() throws Exception {
+    SpotifyClient.Content track =
+        client.followShortLink(URI.create(baseUrl + "/short")).get();
+    assertEquals(SpotifyClient.Kind.TRACK, track.kind());
+
+    SpotifyClient.Content evil =
+        client.followShortLink(URI.create(baseUrl + "/short-evil")).get();
+    assertEquals(SpotifyClient.Kind.UNSUPPORTED, evil.kind());
+    assertTrue(!evil.transientError());
   }
 
   @Test

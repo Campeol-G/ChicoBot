@@ -32,6 +32,8 @@ public final class PlaylistConfirm extends ListenerAdapter {
   static final String NEXT = "playlist-next:";
 
   private final PlaybackService playback;
+  private static final java.util.concurrent.ExecutorService EXECUTOR =
+      java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
   public PlaylistConfirm(PlaybackService playback) {
     this.playback = playback;
@@ -96,38 +98,47 @@ public final class PlaylistConfirm extends ListenerAdapter {
       event.reply("This only works in a server.").setEphemeral(true).queue();
       return;
     }
-    AudioChannelUnion channel = voiceChannel(event);
-    if (channel == null) {
-      event.reply("Join a voice channel first.").setEphemeral(true).queue();
-      return;
-    }
+    // Defer before member/voice lookups: REST completion must not block the
+    // gateway thread.
     event.deferEdit().queue();
-    playback
-        .confirmPlaylist(
-            sessionId,
-            event.getUser().getIdLong(),
-            event.getGuild().getIdLong(),
-            onlySingle,
-            channel.getIdLong())
-        .thenAccept(
-            report -> {
-              deletePreview(event);
-              event
-                  .getHook()
-                  .sendMessage(report)
-                  .setEphemeral(true)
-                  .queue(null, err -> log.warn("playlist report failed", err));
-            })
-        .exceptionally(
-            failure -> {
-              log.warn("playlist confirm failed", failure);
-              event
-                  .getHook()
-                  .sendMessage("Playlist failed. Try again.")
-                  .setEphemeral(true)
-                  .queue(null, err -> log.warn("playlist report failed", err));
-              return null;
-            });
+    EXECUTOR.execute(
+        () -> {
+          AudioChannelUnion channel = voiceChannel(event);
+          if (channel == null) {
+            event
+                .getHook()
+                .sendMessage("Join a voice channel first.")
+                .setEphemeral(true)
+                .queue(null, err -> log.warn("playlist reply failed", err));
+            return;
+          }
+          playback
+              .confirmPlaylist(
+                  sessionId,
+                  event.getUser().getIdLong(),
+                  event.getGuild().getIdLong(),
+                  onlySingle,
+                  channel.getIdLong())
+              .thenAccept(
+                  report -> {
+                    deletePreview(event);
+                    event
+                        .getHook()
+                        .sendMessage(report)
+                        .setEphemeral(true)
+                        .queue(null, err -> log.warn("playlist report failed", err));
+                  })
+              .exceptionally(
+                  failure -> {
+                    log.warn("playlist confirm failed", failure);
+                    event
+                        .getHook()
+                        .sendMessage("Playlist failed. Try again.")
+                        .setEphemeral(true)
+                        .queue(null, err -> log.warn("playlist report failed", err));
+                    return null;
+                  });
+        });
   }
 
   private static AudioChannelUnion voiceChannel(ButtonInteractionEvent event) {

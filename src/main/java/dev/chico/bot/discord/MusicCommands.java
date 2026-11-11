@@ -103,7 +103,10 @@ public final class MusicCommands extends ListenerAdapter {
       long guildId = event.getGuild().getIdLong();
       if (playback.isPaused(guildId)
           && event.getGuild().getAudioManager().getConnectedChannel() != null) {
-        // Reuse resume: reply() keeps the same-channel guard.
+        if (!inSameChannel(event)) {
+          return;
+        }
+        // Resume only after the same-channel guard: never unpause inaudibly.
         reply(event, playback.resume(guildId));
         return;
       }
@@ -209,12 +212,25 @@ public final class MusicCommands extends ListenerAdapter {
       return;
     }
     event.deferReply(true).queue(null, err -> log.warn("deferReply failed", err));
-    liveQueue.post(event.getGuild().getIdLong(), event.getChannel());
-    event
-        .getHook()
-        .sendMessage("Live queue posted below.")
-        .setEphemeral(true)
-        .queue(null, err -> log.warn("queue reply failed", err));
+    long guildId = event.getGuild().getIdLong();
+    liveQueue
+        .post(guildId, event.getChannel())
+        .thenAccept(
+            posted -> {
+              if (posted) {
+                event
+                    .getHook()
+                    .sendMessage("Live queue posted below.")
+                    .setEphemeral(true)
+                    .queue(null, err -> log.warn("queue reply failed", err));
+              } else {
+                event
+                    .getHook()
+                    .sendMessageEmbeds(liveQueue.embed(guildId))
+                    .setEphemeral(true)
+                    .queue(null, err -> log.warn("queue fallback failed", err));
+              }
+            });
   }
 
   private void onNowPlaying(SlashCommandInteractionEvent event) {

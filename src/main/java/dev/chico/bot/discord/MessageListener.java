@@ -87,7 +87,13 @@ public final class MessageListener extends ListenerAdapter {
         .play(guildId, channel.getIdLong(), userId, query)
         .thenAccept(
             result -> {
-              if (result.queued()) {
+              if (result.playlist() != null) {
+                event
+                    .getMessage()
+                    .reply(PlaylistConfirm.message(result.playlist()))
+                    .setAllowedMentions(Collections.emptyList())
+                    .queue(null, err -> log.warn("play reply failed", err));
+              } else if (result.queued()) {
                 event
                     .getMessage()
                     .replyEmbeds(Embeds.nowPlaying(result.candidate()))

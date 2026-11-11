@@ -125,7 +125,6 @@ public final class PreviewButtons extends ListenerAdapter {
     }
     if (remaining.isEmpty()) {
       sessions.remove(sessionId);
-      event.deferEdit().queue();
       deletePreview(event.getHook());
       event
           .getHook()
