@@ -12,7 +12,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.events.interaction.command.MessageContextInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
+import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 
 /** "Play music from image" message command for older image messages. */
 public final class ImageContextMenu extends ListenerAdapter {
@@ -89,8 +89,8 @@ public final class ImageContextMenu extends ListenerAdapter {
             result ->
                 event
                     .getHook()
-                    .sendMessage(
-                        PreviewButtons.previewCreate(
+                    .editOriginal(
+                        PreviewButtons.previewMessage(
                             result.sessionId(), result.tracks(), result.totalDetected(),
                             result.droppedImages(), result.warned(),
                             result.suspiciousDropped()))
@@ -107,8 +107,8 @@ public final class ImageContextMenu extends ListenerAdapter {
                       : "Import failed. Try again later.";
               event
                   .getHook()
-                  .sendMessage(
-                      new MessageCreateBuilder()
+                  .editOriginal(
+                      new MessageEditBuilder()
                           .setContent(text)
                           .setAllowedMentions(Collections.emptyList())
                           .build())

@@ -43,7 +43,10 @@ public final class PlaylistConfirm extends ListenerAdapter {
         new MessageCreateBuilder()
             .setEmbeds(
                 Embeds.playlistPreview(
-                    preview.items(), 0, preview.canPlaySingle(), preview.error()))
+                    preview.items(),
+                    0,
+                    preview.canPlaySingle(),
+                    note(preview.items(), preview.canPlaySingle(), preview.error())))
             .setAllowedMentions(Collections.emptyList());
     if (preview.sessionId() != null) {
       builder.setComponents(components(preview.sessionId(), 0, preview.canPlaySingle(), preview.items().size()));
@@ -169,13 +172,27 @@ public final class PlaylistConfirm extends ListenerAdapter {
   }
 
   private static MessageEditData edit(PlaylistSession session, int page) {
+    boolean canPlaySingle = session.singleTrackUri() != null;
     return new MessageEditBuilder()
         .setEmbeds(
             Embeds.playlistPreview(
-                session.items(), page, session.singleTrackUri() != null, null))
-        .setComponents(components(session.id(), page, session.singleTrackUri() != null, session.items().size()))
+                session.items(),
+                page,
+                canPlaySingle,
+                note(session.items(), canPlaySingle, null)))
+        .setComponents(components(session.id(), page, canPlaySingle, session.items().size()))
         .setAllowedMentions(Collections.emptyList())
         .build();
+  }
+
+  private static String note(
+      List<dev.chico.bot.application.PlaylistItem> items,
+      boolean canPlaySingle,
+      String error) {
+    if (items.isEmpty() && canPlaySingle) {
+      return "The playlist could not be loaded. You can still play the linked track.";
+    }
+    return error;
   }
 
   private static List<net.dv8tion.jda.api.components.MessageTopLevelComponent> components(

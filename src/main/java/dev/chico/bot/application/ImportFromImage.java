@@ -163,7 +163,11 @@ public final class ImportFromImage {
       int index = 0;
       for (AttachmentInput in : first) {
         perImage.add(readOne(in, index++));
-        progress.onImage(index, first.size());
+        try {
+          progress.onImage(index, first.size());
+        } catch (RuntimeException ignored) {
+          // Progress is best-effort; never fail an import for a UI edit.
+        }
       }
       List<ParsedTrack> merged = TrackListMerger.merge(perImage);
       NonMusicGuard.Result guard = NonMusicGuard.evaluate(merged);

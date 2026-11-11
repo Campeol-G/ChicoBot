@@ -270,6 +270,9 @@ public final class PlaybackService {
     if (!connector.connect(guildId, voiceChannelId)) {
       return CompletableFuture.completedFuture("Could not join that voice channel.");
     }
+    if (session.items().isEmpty()) {
+      return CompletableFuture.completedFuture("That playlist has no tracks.");
+    }
     List<TrackCandidate> loaded =
         session.items().stream()
             .filter(item -> item.candidate() != null)
@@ -845,24 +848,15 @@ public final class PlaybackService {
   }
 
   private static String refusalMessage(UrlDecision.Reason reason, String input) {
-    if (reason == UrlDecision.Reason.PLAYLIST && isSoundCloudInput(input)) {
-      return "Playlists are not supported yet. Send a link to a single SoundCloud track.";
-    }
     return switch (reason) {
       case PLAYLIST ->
-          "Playlists are not supported yet. Send a link to a single track"
-              + " (on YouTube, remove `&list=...`).";
-      case SPOTIFY -> "Spotify links are not supported yet.";
+          "That collection link is not supported. Send a single track or a supported playlist.";
+      case SPOTIFY -> "Spotify episodes are not supported. Send a track or playlist link.";
       case NOT_HTTPS -> "Links must use HTTPS.";
       case UNKNOWN_HOST -> "That link is not from a supported source.";
       case UNSUPPORTED_LINK -> "That link is not supported.";
       case INVALID -> throw new IllegalStateException("unreachable");
     };
-  }
-
-  private static boolean isSoundCloudInput(String input) {
-    String lowered = input.strip().toLowerCase(java.util.Locale.ROOT);
-    return lowered.contains("soundcloud.com");
   }
 
   private static YoutubeAudioSourceManager createYoutubeSource(Config config) {

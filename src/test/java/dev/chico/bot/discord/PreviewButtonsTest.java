@@ -34,6 +34,6 @@ class PreviewButtonsTest {
             .mapToObj(i -> new ParsedTrack("r" + i, "t" + i, "a", 90.0))
             .toList();
 
-    assertDoesNotThrow(() -> PreviewButtons.previewCreate(UUID.randomUUID(), tracks, 30));
+    assertDoesNotThrow(() -> PreviewButtons.previewMessage(UUID.randomUUID(), tracks, 30, 0));
   }
 }

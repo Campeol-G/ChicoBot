@@ -29,8 +29,6 @@ import net.dv8tion.jda.api.entities.channel.unions.AudioChannelUnion;
 import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
-import net.dv8tion.jda.api.utils.messages.MessageCreateData;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 import net.dv8tion.jda.api.utils.messages.MessageEditData;
 
@@ -81,35 +79,6 @@ public final class PreviewButtons extends ListenerAdapter {
       int suspiciousDropped) {
     return previewEdit(
         sessionId, tracks, totalDetected, droppedImages, warned, suspiciousDropped);
-  }
-
-  /** Same preview as a fresh message (for the context menu flow). */
-  public static MessageCreateData previewCreate(
-      UUID sessionId, List<ParsedTrack> tracks, int totalDetected) {
-    return previewCreate(sessionId, tracks, totalDetected, 0);
-  }
-
-  /** Same preview as a fresh message with dropped-image count. */
-  public static MessageCreateData previewCreate(
-      UUID sessionId, List<ParsedTrack> tracks, int totalDetected, int droppedImages) {
-    return previewCreate(sessionId, tracks, totalDetected, droppedImages, false, 0);
-  }
-
-  /** Same preview with the non-music warning banner. */
-  public static MessageCreateData previewCreate(
-      UUID sessionId,
-      List<ParsedTrack> tracks,
-      int totalDetected,
-      int droppedImages,
-      boolean warned,
-      int suspiciousDropped) {
-    return new MessageCreateBuilder()
-        .setEmbeds(
-            Embeds.importPreview(
-                tracks, totalDetected, droppedImages, warned, suspiciousDropped))
-        .setComponents(previewComponents(sessionId, tracks))
-        .setAllowedMentions(Collections.emptyList())
-        .build();
   }
 
   @Override
