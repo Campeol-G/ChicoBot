@@ -3,9 +3,10 @@
 Personal Discord music bot (Java): plays YouTube and SoundCloud tracks and
 imports tracks from playlist screenshots through local OCR, with a preview.
 
-Status: v1 feature-complete. The bot connects, plays by link or search,
-keeps a per-guild queue, and imports YouTube Music / Spotify screenshots
-via Tesseract (`@bot` + image → preview → Play all).
+Status: v1.1 feature-complete. The bot connects, plays by link or search,
+keeps a per-guild queue with a live queue message, confirms playlists before
+enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
+(`@bot` + image → preview → Play all).
 
 ## Features
 

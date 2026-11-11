@@ -257,7 +257,11 @@ public final class TrackScheduler extends AudioEventAdapter {
   @Override
   public synchronized void onTrackException(
       AudioPlayer player, AudioTrack track, FriendlyException exception) {
-    log.warn("Track failed, recovering: {}", track.getInfo().title, exception);
+    log.warn(
+        "Track failed id={} title={}",
+        track.getIdentifier(),
+        track.getInfo().title,
+        exception);
     if (pending != null && pending.track() != track) {
       return;
     }
