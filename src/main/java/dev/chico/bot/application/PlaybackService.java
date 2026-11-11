@@ -283,34 +283,89 @@ public final class PlaybackService {
     if (music == null || music.scheduler().current().isEmpty()) {
       return "Nothing to skip.";
     }
-    if (target.isEmpty() || target.orElseThrow().isBlank()) {
-      synchronized (music.scheduler()) {
+    String trimmed = target.orElse("").strip();
+    synchronized (music.scheduler()) {
+      Optional<TrackCandidate> currentNow = music.scheduler().current();
+      if (currentNow.isEmpty()) {
+        return "Nothing to skip.";
+      }
+      TrackCandidate oldCurrent = currentNow.orElseThrow();
+      if (trimmed.isEmpty() || isDisplayOne(trimmed)) {
         music.scheduler().clearLoop();
         music.scheduler().nextTrack();
-      }
-      return "Skipped.";
-    }
-    String trimmed = target.orElseThrow().strip();
-    try {
-      if (Integer.parseInt(trimmed) == 1) {
-        synchronized (music.scheduler()) {
-          music.scheduler().clearLoop();
-          music.scheduler().nextTrack();
+        Optional<TrackCandidate> now = music.scheduler().current();
+        if (now.isEmpty()) {
+          return "Skipped " + escapeTitle(oldCurrent) + ". Nothing is playing.";
         }
-        return "Skipped.";
+        return "Skipped to "
+            + escapeTitle(now.orElseThrow())
+            + ".\n"
+            + skippedList(List.of(oldCurrent), false);
       }
-    } catch (NumberFormatException notANumber) {
-      // Fall through to name lookup.
-    }
-    synchronized (music.scheduler()) {
-      Optional<Integer> index = findQueued(music, target.orElseThrow());
+      Optional<Integer> index = findQueued(music, trimmed);
       if (index.isEmpty()) {
         return "No queued track matches that.";
       }
+      int queueIndex = index.orElseThrow() - 1;
+      List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
+      List<TrackCandidate> skipped = new java.util.ArrayList<>();
+      skipped.add(oldCurrent);
+      for (int i = 0; i < queueIndex && i < queued.size(); i++) {
+        skipped.add(queued.get(i));
+      }
       music.scheduler().clearLoop();
-      music.scheduler().skipTo(index.orElseThrow() - 1);
+      music.scheduler().skipTo(queueIndex);
+      Optional<TrackCandidate> now = music.scheduler().current();
+      if (now.isEmpty()) {
+        return "Skipped. Nothing is playing.\n" + skippedList(skipped, true);
+      }
+      String targetLabel =
+          isNumeric(trimmed)
+              ? (index.orElseThrow() + 1) + " - " + escapeTitle(now.orElseThrow())
+              : escapeTitle(now.orElseThrow());
+      return "Skipped to " + targetLabel + ".\n" + skippedList(skipped, true);
     }
-    return "Skipped.";
+  }
+
+  private static boolean isDisplayOne(String target) {
+    try {
+      return Integer.parseInt(target) == 1;
+    } catch (NumberFormatException notANumber) {
+      return false;
+    }
+  }
+
+  private static boolean isNumeric(String target) {
+    try {
+      Integer.parseInt(target);
+      return true;
+    } catch (NumberFormatException notANumber) {
+      return false;
+    }
+  }
+
+  private static String escapeTitle(TrackCandidate candidate) {
+    return dev.chico.bot.security.TextSanitizer.escape(candidate.title());
+  }
+
+  /**
+   * Shared skip report list: first ten titles keep the message under the
+   * 2000-character limit even after playlist-sized queues.
+   */
+  private static String skippedList(List<TrackCandidate> skipped, boolean numbered) {
+    StringBuilder report = new StringBuilder("Skipped:");
+    int shown = Math.min(10, skipped.size());
+    for (int i = 0; i < shown; i++) {
+      report.append('\n');
+      if (numbered) {
+        report.append(i + 1).append(". ");
+      }
+      report.append(escapeTitle(skipped.get(i)));
+    }
+    if (skipped.size() > shown) {
+      report.append("\n…and ").append(skipped.size() - shown).append(" more.");
+    }
+    return report.toString();
   }
 
   public String remove(long guildId, String target) {

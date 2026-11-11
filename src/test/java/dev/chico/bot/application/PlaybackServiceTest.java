@@ -439,6 +439,17 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void skipLastTrackReportsNothingPlayingAndClearsLoop() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha")));
+    service.loop(1L, Optional.of("all"));
+
+    assertEquals("Skipped Alpha. Nothing is playing.", service.skip(1L, Optional.empty()));
+    assertEquals(
+        dev.chico.bot.audio.TrackScheduler.LoopMode.OFF, service.loopView(1L).mode());
+  }
+
+  @Test
   void skipByNumberAndByName() {
     SilentVoice voice = new SilentVoice();
     MutableClock clock = new MutableClock(Instant.parse("2026-11-07T12:00:00Z"));
@@ -453,8 +464,12 @@ class PlaybackServiceTest {
     service.enqueueResolved(
         1L, List.of(candidate("Beta"), candidate("Gamma"), candidate("Delta")));
 
-    assertEquals("Skipped.", service.skip(1L, java.util.Optional.of("2")));
-    assertEquals("Skipped.", service.skip(1L, java.util.Optional.of("delta")));
+    assertEquals(
+        "Skipped to 2 - Beta.\nSkipped:\n1. Thriller",
+        service.skip(1L, java.util.Optional.of("2")));
+    assertEquals(
+        "Skipped to Delta.\nSkipped:\n1. Beta\n2. Gamma",
+        service.skip(1L, java.util.Optional.of("delta")));
   }
 
   @Test
@@ -491,7 +506,9 @@ class PlaybackServiceTest {
     service.enqueueResolved(
         1L, List.of(candidate("Beta"), candidate("Gamma"), candidate("Delta")));
 
-    assertEquals("Skipped.", service.skip(1L, java.util.Optional.of("3")));
+    assertEquals(
+        "Skipped to 3 - Gamma.\nSkipped:\n1. Alpha\n2. Beta",
+        service.skip(1L, java.util.Optional.of("3")));
     assertEquals("Gamma", service.queueView(1L).current().orElseThrow().title());
   }
 
