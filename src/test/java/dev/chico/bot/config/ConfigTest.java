@@ -32,6 +32,8 @@ class ConfigTest {
     assertEquals(50, config.queueMax());
     assertEquals(50, config.importMaxTracks());
     assertEquals(0.35, config.matchThreshold());
+    assertEquals(420, config.idleDisconnectS());
+    assertEquals(2700, config.pausedDisconnectS());
   }
 
   @Test

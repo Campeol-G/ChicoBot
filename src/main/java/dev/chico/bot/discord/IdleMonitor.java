@@ -1,6 +1,7 @@
 package dev.chico.bot.discord;
 
 import dev.chico.bot.application.PlaybackService;
+import java.time.Clock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -11,7 +12,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Disconnects after idleness: empty queue or an empty voice channel. */
+/** Disconnects after idleness: empty queue/channel or a paused track. */
 public final class IdleMonitor {
 
   private static final Logger log = LoggerFactory.getLogger(IdleMonitor.class);
@@ -19,7 +20,9 @@ public final class IdleMonitor {
   private final JDA jda;
   private final PlaybackService playback;
   private final long idleDisconnectS;
-  private final Map<Long, Long> idleSince = new ConcurrentHashMap<>();
+  private final long pausedDisconnectS;
+  private final Clock clock;
+  private final Map<Long, IdleTracker> trackers = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler =
       Executors.newSingleThreadScheduledExecutor(
           task -> {
@@ -28,10 +31,22 @@ public final class IdleMonitor {
             return thread;
           });
 
-  public IdleMonitor(JDA jda, PlaybackService playback, long idleDisconnectS) {
+  public IdleMonitor(
+      JDA jda, PlaybackService playback, long idleDisconnectS, long pausedDisconnectS) {
+    this(jda, playback, idleDisconnectS, pausedDisconnectS, Clock.systemUTC());
+  }
+
+  IdleMonitor(
+      JDA jda,
+      PlaybackService playback,
+      long idleDisconnectS,
+      long pausedDisconnectS,
+      Clock clock) {
     this.jda = jda;
     this.playback = playback;
     this.idleDisconnectS = idleDisconnectS;
+    this.pausedDisconnectS = pausedDisconnectS;
+    this.clock = clock;
   }
 
   public void start() {
@@ -51,18 +66,19 @@ public final class IdleMonitor {
   private void check(Guild guild) {
     var audio = guild.getAudioManager();
     long guildId = guild.getIdLong();
-    if (audio.getConnectedChannel() == null) {
-      idleSince.remove(guildId);
-      return;
-    }
-    if (playback.isIdle(guildId) || channelEmpty(guild)) {
-      long since = idleSince.computeIfAbsent(guildId, id -> System.currentTimeMillis());
-      if (System.currentTimeMillis() - since >= idleDisconnectS * 1000L) {
-        playback.leave(guildId);
-        idleSince.remove(guildId);
-      }
-    } else {
-      idleSince.remove(guildId);
+    IdleTracker tracker =
+        trackers.computeIfAbsent(
+            guildId, id -> new IdleTracker(idleDisconnectS, pausedDisconnectS));
+    IdleTracker.Action action =
+        tracker.tick(
+            audio.getConnectedChannel() != null,
+            channelEmpty(guild),
+            playback.isPaused(guildId),
+            playback.isIdle(guildId),
+            clock.millis());
+    if (action == IdleTracker.Action.DISCONNECT) {
+      playback.leave(guildId);
+      trackers.remove(guildId);
     }
   }
 

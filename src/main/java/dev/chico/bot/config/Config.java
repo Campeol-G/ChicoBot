@@ -95,7 +95,11 @@ public final class Config {
   }
 
   public int idleDisconnectS() {
-    return parseInt("IDLE_DISCONNECT_S", 300);
+    return parseInt("IDLE_DISCONNECT_S", 420);
+  }
+
+  public int pausedDisconnectS() {
+    return parseInt("PAUSED_DISCONNECT_S", 2700);
   }
 
   public int resolveTimeoutMs() {
@@ -154,6 +158,7 @@ public final class Config {
     nonNegative("PLAY_COOLDOWN_S", playCooldownS());
     nonNegative("SOURCE_DEGRADED_COOLDOWN_S", sourceDegradedCooldownS());
     nonNegative("IDLE_DISCONNECT_S", idleDisconnectS());
+    nonNegative("PAUSED_DISCONNECT_S", pausedDisconnectS());
     positive("OCR_TIMEOUT_MS", ocrTimeoutMs());
     positive("RESOLVE_TIMEOUT_MS", resolveTimeoutMs());
     positive("IMG_MAX_BYTES", imgMaxBytes());
