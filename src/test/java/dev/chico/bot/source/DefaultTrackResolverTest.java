@@ -41,6 +41,7 @@ class DefaultTrackResolverTest {
     volatile boolean searchHangs;
     volatile List<TrackCandidate> urlResult = List.of();
     volatile Throwable urlFailure;
+    final java.util.Queue<Throwable> urlFailureQueue = new java.util.ArrayDeque<>();
 
     FakeLoader(Source source) {
       this.source = source;
@@ -73,6 +74,12 @@ class DefaultTrackResolverTest {
     @Override
     public CompletableFuture<List<TrackCandidate>> loadUrl(URI uri) {
       urlLoads.incrementAndGet();
+      Throwable queuedFailure = urlFailureQueue.poll();
+      if (queuedFailure != null) {
+        CompletableFuture<List<TrackCandidate>> failed = new CompletableFuture<>();
+        failed.completeExceptionally(queuedFailure);
+        return failed;
+      }
       if (urlFailure != null) {
         CompletableFuture<List<TrackCandidate>> failed = new CompletableFuture<>();
         failed.completeExceptionally(urlFailure);
@@ -567,6 +574,91 @@ class DefaultTrackResolverTest {
 
     assertEquals(2, result.size());
     assertEquals(6 * 60 + 5, result.get(0).duration().getSeconds());
+  }
+
+  private static DefaultTrackResolver scRetryResolver(
+      FakeLoader youtube, FakeLoader soundcloud, Duration retryDelay) {
+    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
+    loaders.put(Source.YOUTUBE, youtube);
+    loaders.put(Source.SOUNDCLOUD, soundcloud);
+    return new DefaultTrackResolver(
+        loaders,
+        new Ranker(0.0),
+        new CircuitBreaker(10, Duration.ofMinutes(5), Clock.systemUTC()),
+        Duration.ofSeconds(5),
+        false,
+        retryDelay);
+  }
+
+  @Test
+  void scFormatErrorRetriesOnceThenFallsBack() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailure =
+        new com.sedmelluq.discord.lavaplayer.tools.FriendlyException(
+            DefaultTrackResolver.SC_FORMAT_ERROR + " here",
+            com.sedmelluq.discord.lavaplayer.tools.FriendlyException.Severity.COMMON,
+            null);
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Ludwig the Holy Blade", "Jachym Jurda"));
+    DefaultTrackResolver resolver = scRetryResolver(youtube, soundcloud, Duration.ZERO);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/jachym-jurda/ludwig-the-holy-blade")))
+            .get();
+
+    assertEquals(1, result.size());
+    assertEquals(2, soundcloud.urlLoads.get());
+    assertEquals(1, youtube.searches.get());
+  }
+
+  @Test
+  void scFormatErrorRetrySuccessAvoidsFallback() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailureQueue.add(
+        new com.sedmelluq.discord.lavaplayer.tools.FriendlyException(
+            DefaultTrackResolver.SC_FORMAT_ERROR,
+            com.sedmelluq.discord.lavaplayer.tools.FriendlyException.Severity.COMMON,
+            null));
+    soundcloud.urlResult =
+        List.of(candidate(Source.SOUNDCLOUD, "Direct", "Artist"));
+    DefaultTrackResolver resolver = scRetryResolver(youtube, soundcloud, Duration.ZERO);
+
+    List<TrackCandidate> result =
+        resolver
+            .resolve(
+                new UrlQuery(
+                    Source.SOUNDCLOUD,
+                    URI.create("https://soundcloud.com/some-artist/some-track")))
+            .get();
+
+    assertEquals("Direct", result.get(0).title());
+    assertEquals(2, soundcloud.urlLoads.get());
+    assertEquals(0, youtube.searches.get());
+  }
+
+  @Test
+  void scOtherErrorDoesNotRetry() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    soundcloud.urlFailure = new RuntimeException("boom");
+    youtube.searchResult =
+        List.of(candidate(Source.YOUTUBE, "Ludwig the Holy Blade", "Jachym Jurda"));
+    DefaultTrackResolver resolver = scRetryResolver(youtube, soundcloud, Duration.ZERO);
+
+    resolver
+        .resolve(
+            new UrlQuery(
+                Source.SOUNDCLOUD,
+                URI.create("https://soundcloud.com/jachym-jurda/ludwig-the-holy-blade")))
+        .get();
+
+    assertEquals(1, soundcloud.urlLoads.get());
   }
 
   @Test

@@ -30,6 +30,32 @@ class EmbedsTest {
   }
 
   @Test
+  void playlistPreviewPaginatesTenPerPage() {
+    java.util.List<dev.chico.bot.application.PlaylistItem> items =
+        java.util.stream.IntStream.range(0, 25)
+            .mapToObj(i -> new dev.chico.bot.application.PlaylistItem("Track" + i, "Artist", null))
+            .toList();
+
+    var page2 = Embeds.playlistPreview(items, 1, false, null);
+
+    assertTrue(page2.getDescription().contains("11. Track10"), page2.getDescription());
+    assertTrue(
+        page2.getFooter().getText().contains("Showing 11–20 of 25."),
+        page2.getFooter().getText());
+  }
+
+  @Test
+  void playlistPreviewClampsOutOfRangePage() {
+    var items =
+        java.util.List.of(new dev.chico.bot.application.PlaylistItem("Only", "", null));
+
+    var embed = Embeds.playlistPreview(items, 9, true, "Playlist unavailable.");
+
+    assertTrue(embed.getDescription().contains("Only"), embed.getDescription());
+    assertTrue(embed.getFooter().getText().contains("Showing 1–1 of 1."));
+  }
+
+  @Test
   void queueMarksLoopTargetAndQueueLoop() {
     var listed =
         Embeds.queue(

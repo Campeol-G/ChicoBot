@@ -23,6 +23,11 @@ public final class TrackQueue<T> {
     return items.offer(item);
   }
 
+  /** Playlist-confirm path only: bypasses maxSize by design. */
+  public synchronized boolean addUnbounded(T item) {
+    return items.offer(item);
+  }
+
   public synchronized Optional<T> poll() {
     return Optional.ofNullable(items.poll());
   }

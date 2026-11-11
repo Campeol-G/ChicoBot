@@ -61,4 +61,19 @@ public final class GuildMusicManager {
   public synchronized int enqueueAll(List<TrackCandidate> candidates) {
     return enqueueAll(candidates, 0L);
   }
+
+  /** Playlist-confirm path only: keeps accepting past the queue cap. */
+  public synchronized int enqueueAllUnbounded(
+      List<TrackCandidate> candidates, long addedBy) {
+    int accepted = 0;
+    for (TrackCandidate candidate : candidates) {
+      TrackCandidate owned =
+          candidate.withQueueIdentity(nextItemId.incrementAndGet(), addedBy);
+      if (!scheduler.queueUnbounded(owned)) {
+        break;
+      }
+      accepted++;
+    }
+    return accepted;
+  }
 }

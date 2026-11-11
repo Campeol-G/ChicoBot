@@ -45,6 +45,9 @@ public final class DefaultTrackResolver implements TrackResolver {
   private final CircuitBreaker breaker;
   private final Duration resolveTimeout;
   private final boolean parallelSearch;
+  private final Duration scRetryDelay;
+
+  static final String SC_FORMAT_ERROR = "Did not detect any supported formats";
 
   // Calibration: 0.3 lets a near-tie go to the provider's pick, while a clear
   // text winner still wins (the "undressed" case).
@@ -65,11 +68,22 @@ public final class DefaultTrackResolver implements TrackResolver {
       CircuitBreaker breaker,
       Duration resolveTimeout,
       boolean parallelSearch) {
+    this(loaders, ranker, breaker, resolveTimeout, parallelSearch, Duration.ofSeconds(2));
+  }
+
+  DefaultTrackResolver(
+      Map<Source, TrackLoader> loaders,
+      Ranker ranker,
+      CircuitBreaker breaker,
+      Duration resolveTimeout,
+      boolean parallelSearch,
+      Duration scRetryDelay) {
     this.loaders = Map.copyOf(loaders);
     this.ranker = ranker;
     this.breaker = breaker;
     this.resolveTimeout = resolveTimeout;
     this.parallelSearch = parallelSearch;
+    this.scRetryDelay = scRetryDelay;
   }
 
   @Override
@@ -117,11 +131,40 @@ public final class DefaultTrackResolver implements TrackResolver {
         .toList();
   }
 
+  @Override
+  public CompletableFuture<List<TrackCandidate>> resolvePlaylist(UrlQuery query) {
+    TrackLoader loader = loaders.get(query.source());
+    if (loader == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+    return withTimeout(loader.loadPlaylist(query.uri()))
+        .thenApply(
+            candidates -> {
+              breaker.recordSuccess(query.source());
+              return candidates;
+            })
+        .exceptionally(
+            failure -> {
+              breaker.recordFailure(query.source());
+              return List.of();
+            });
+  }
+
   private CompletableFuture<List<TrackCandidate>> resolveUrl(UrlQuery query) {
     TrackLoader loader = loaders.get(query.source());
     if (loader == null) {
       return CompletableFuture.completedFuture(List.of());
     }
+    return loadDirect(query, loader, true);
+  }
+
+  /**
+   * Direct load with one delayed retry for SoundCloud's transient "no
+   * supported formats" error. The first format error never touches the
+   * breaker: it is usually a CDN hiccup, not a dead source.
+   */
+  private CompletableFuture<List<TrackCandidate>> loadDirect(
+      UrlQuery query, TrackLoader loader, boolean allowFormatRetry) {
     return withTimeout(loader.loadUrl(query.uri()))
         .thenCompose(
             candidates -> {
@@ -133,9 +176,34 @@ public final class DefaultTrackResolver implements TrackResolver {
             })
         .exceptionallyCompose(
             failure -> {
+              if (allowFormatRetry && isScFormatError(query.source(), failure)) {
+                return retryAfterDelay(query, loader);
+              }
               breaker.recordFailure(query.source());
               return fallbackSearch(query);
             });
+  }
+
+  private CompletableFuture<List<TrackCandidate>> retryAfterDelay(
+      UrlQuery query, TrackLoader loader) {
+    return CompletableFuture.supplyAsync(
+            () -> null,
+            CompletableFuture.delayedExecutor(
+                scRetryDelay.toMillis(), TimeUnit.MILLISECONDS))
+        .thenCompose(ignored -> loadDirect(query, loader, false));
+  }
+
+  private static boolean isScFormatError(Source source, Throwable failure) {
+    if (source != Source.SOUNDCLOUD) {
+      return false;
+    }
+    Throwable cause =
+        failure instanceof java.util.concurrent.CompletionException
+            ? failure.getCause()
+            : failure;
+    return cause instanceof com.sedmelluq.discord.lavaplayer.tools.FriendlyException
+        && cause.getMessage() != null
+        && cause.getMessage().contains(SC_FORMAT_ERROR);
   }
 
   /**

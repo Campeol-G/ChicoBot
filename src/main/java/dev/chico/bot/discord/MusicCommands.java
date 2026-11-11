@@ -130,6 +130,13 @@ public final class MusicCommands extends ListenerAdapter {
         .play(guildId, channel.getIdLong(), userId, option.getAsString())
         .thenAccept(
             result -> {
+              if (result.playlist() != null) {
+                event
+                    .getHook()
+                    .sendMessage(PlaylistConfirm.message(result.playlist()))
+                    .queue(null, err -> log.warn("play reply failed", err));
+                return;
+              }
               if (result.queued()) {
                 event.getHook().sendMessageEmbeds(Embeds.nowPlaying(result.candidate())).queue(
                     null, err -> log.warn("play reply failed", err));

@@ -10,20 +10,26 @@ via Tesseract (`@bot` + image → preview → Play all).
 ## Features
 
 - `/play <name or link>`, `/pause`, `/resume`, `/skip [target]`, `/stop`,
-  `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/ping`.
-- `@bot p <query>` in a channel works like `/play`.
+  `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/loop [target]`,
+  `/ping`.
+- `@bot p <query>` in a channel works like `/play`; bare `/play` unpauses.
+- `/queue` posts one live queue message that updates on every change.
 - Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 10 images):
   it reads the tracks with local OCR, shows a preview with **Play all**,
   **Remove items** and **Cancel** buttons, then queues the confirmed list
-  in print order. Only the importer can confirm.
+  in print order. Only the importer can confirm; terminal actions leave a
+  short ephemeral summary instead of a dead preview.
 - Message command **Play music from image** for screenshots in older messages.
 - Automatic fallback between YouTube and SoundCloud; per-source circuit
   breaker so a YouTube outage does not stall a 25-track import.
 - Links to Apple Music and Spotify tracks are accepted as metadata: the bot
   reads the title and artist and searches YouTube / SoundCloud. Spotify uses
   a free Web API app (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`; empty
-  disables Spotify links). Playlist links are refused (or reduced to one
-  track); no playlist ever floods the queue.
+  disables Spotify links).
+- Playlist links (YouTube `list=`, SoundCloud sets, Spotify playlists) show a
+  paginated confirmation before enqueueing. Confirmed playlists are the only
+  path allowed past `QUEUE_MAX`; private or unavailable playlists get their
+  own error.
 
 ## Requirements
 

@@ -58,6 +58,15 @@ public final class TrackScheduler extends AudioEventAdapter {
   }
 
   public synchronized boolean queue(TrackCandidate candidate) {
+    return queue(candidate, false);
+  }
+
+  /** Playlist-confirm path only: the queue cap does not apply. */
+  public synchronized boolean queueUnbounded(TrackCandidate candidate) {
+    return queue(candidate, true);
+  }
+
+  private boolean queue(TrackCandidate candidate, boolean unbounded) {
     advancing = true;
     try {
       if (player.startTrack(candidate.track(), true)) {
@@ -69,7 +78,8 @@ public final class TrackScheduler extends AudioEventAdapter {
     } finally {
       advancing = false;
     }
-    boolean added = queue.add(candidate);
+    boolean added =
+        unbounded ? queue.addUnbounded(candidate) : queue.add(candidate);
     if (added) {
       appendToCycle(candidate);
     }

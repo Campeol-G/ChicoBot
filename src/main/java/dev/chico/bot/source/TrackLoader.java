@@ -12,4 +12,9 @@ public interface TrackLoader {
   CompletableFuture<List<TrackCandidate>> search(String prefixedQuery);
 
   CompletableFuture<List<TrackCandidate>> loadUrl(URI uri);
+
+  /** Loads every track of a playlist link; single links return one track. */
+  default CompletableFuture<List<TrackCandidate>> loadPlaylist(URI uri) {
+    return loadUrl(uri);
+  }
 }

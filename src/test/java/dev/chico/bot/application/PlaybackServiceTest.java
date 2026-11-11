@@ -21,6 +21,7 @@ import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Source;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackResolver;
+import dev.chico.bot.source.UrlQuery;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -76,6 +77,24 @@ class PlaybackServiceTest {
 
     @Override
     public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
+      return CompletableFuture.completedFuture(candidates);
+    }
+  }
+
+  static final class PlaylistResolver implements TrackResolver {
+    private final List<TrackCandidate> candidates;
+
+    PlaylistResolver(List<TrackCandidate> candidates) {
+      this.candidates = candidates;
+    }
+
+    @Override
+    public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
+      return CompletableFuture.completedFuture(candidates);
+    }
+
+    @Override
+    public CompletableFuture<List<TrackCandidate>> resolvePlaylist(UrlQuery query) {
       return CompletableFuture.completedFuture(candidates);
     }
   }
@@ -350,7 +369,7 @@ class PlaybackServiceTest {
   }
 
   @Test
-  void playlistLinksNeverLoadAsSingleTracks() {
+  void playlistLinksShowPreviewInsteadOfLoadingOneTrack() {
     PlaybackService.PlayResult youtube =
         service()
             .play(1L, 2L, 3L, "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLx")
@@ -361,20 +380,99 @@ class PlaybackServiceTest {
             .join();
 
     assertFalse(youtube.queued());
+    assertTrue(youtube.playlist() != null);
+    assertTrue(youtube.playlist().canPlaySingle());
     assertFalse(soundcloud.queued());
-    assertTrue(youtube.message().contains("Playlists are not supported"));
-    assertTrue(soundcloud.message().contains("Playlists are not supported"));
+    assertTrue(soundcloud.message().contains("private or unavailable"));
   }
 
   @Test
-  void playPlaylistUrlRefusesWithHint() {
-    PlaybackService.PlayResult result =
-        service()
-            .play(1L, 2L, 3L, "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLx")
-            .join();
+  void playlistPreviewEnqueuesAllBeyondQueueMax() {
+    PlaybackService service =
+        serviceWith(
+            new SilentVoice(),
+            new Config(
+                Map.of(
+                    "DISCORD_TOKEN", "test",
+                    "PLAY_COOLDOWN_S", "0",
+                    "QUEUE_MAX", "2")),
+            Clock.systemUTC(),
+            new PlaylistResolver(
+                List.of(
+                    candidate("A"), candidate("B"), candidate("C"),
+                    candidate("D"), candidate("E"))));
 
-    assertFalse(result.queued());
-    assertTrue(result.message().contains("Playlists are not supported"));
+    PlaybackService.PlayResult preview =
+        service.play(1L, 2L, 3L, "https://youtube.com/playlist?list=PLx").join();
+    var sessionId = preview.playlist().sessionId();
+    assertTrue(sessionId != null);
+
+    assertEquals("Enqueued 5.", service.confirmPlaylist(sessionId, 3L, 1L, false, 2L).join());
+    PlaybackService.QueueView view = service.queueView(1L);
+    assertEquals(1, view.current().isPresent() ? 1 : 0);
+    assertEquals(4, view.queued().size());
+  }
+
+  @Test
+  void playlistConfirmIsOwnerOnly() {
+    PlaybackService service =
+        serviceWith(
+            new SilentVoice(),
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new PlaylistResolver(List.of(candidate("A"), candidate("B"))));
+    var sessionId =
+        service.play(1L, 2L, 3L, "https://youtube.com/playlist?list=PLx")
+            .join()
+            .playlist()
+            .sessionId();
+
+    assertEquals(
+        "Only the requester can do that.",
+        service.confirmPlaylist(sessionId, 99L, 1L, false, 2L).join());
+    assertTrue(service.playlistSession(sessionId).isPresent());
+  }
+
+  @Test
+  void playlistConfirmExpiresWithTtl() {
+    MutableClock clock = new MutableClock(Instant.parse("2026-11-07T12:00:00Z"));
+    PlaybackService service =
+        serviceWith(
+            new SilentVoice(),
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            clock,
+            new PlaylistResolver(List.of(candidate("A"), candidate("B"))));
+    var sessionId =
+        service.play(1L, 2L, 3L, "https://youtube.com/playlist?list=PLx")
+            .join()
+            .playlist()
+            .sessionId();
+
+    clock.advance(Duration.ofSeconds(301));
+
+    assertEquals(
+        "That playlist expired.",
+        service.confirmPlaylist(sessionId, 3L, 1L, false, 2L).join());
+  }
+
+  @Test
+  void playlistConfirmSingleTrackPlaysTheLinkedTrack() {
+    PlaybackService service =
+        serviceWith(
+            new SilentVoice(),
+            new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+            Clock.systemUTC(),
+            new PlaylistResolver(List.of(candidate("A"))));
+    var sessionId =
+        service.play(1L, 2L, 3L, "https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLx")
+            .join()
+            .playlist()
+            .sessionId();
+
+    assertEquals(
+        "Playing that track.",
+        service.confirmPlaylist(sessionId, 3L, 1L, true, 2L).join());
+    assertTrue(service.queueView(1L).current().isPresent());
   }
 
   @Test

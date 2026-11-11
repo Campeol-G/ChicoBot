@@ -47,6 +47,14 @@ public final class MetadataLookup {
     return spotify != null;
   }
 
+  /** Playlist metadata for the confirm preview (Spotify only). */
+  public CompletableFuture<SpotifyClient.Content> spotifyPlaylist(UrlQuery query) {
+    if (spotify == null || query.source() != Source.SPOTIFY) {
+      return CompletableFuture.completedFuture(SpotifyClient.Content.unsupported());
+    }
+    return spotify.resolve(query.uri());
+  }
+
   /** Resolves a metadata-only link to "artist - title" for text search. */
   public CompletableFuture<Optional<String>> artistTitle(UrlQuery query) {
     if (query.source() == Source.SPOTIFY) {

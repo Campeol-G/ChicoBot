@@ -48,9 +48,16 @@ public final class PlaybackService {
   private static final URI ITUNES_LOOKUP = URI.create("https://itunes.apple.com/lookup");
 
   private static final Logger log = LoggerFactory.getLogger(PlaybackService.class);
+  private static final java.util.concurrent.ExecutorService RESOLVE_EXECUTOR =
+      java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
   /** Outcome of a play request: the queued track or a message for the user. */
-  public record PlayResult(boolean queued, String message, TrackCandidate candidate) {
+  public record PlayResult(
+      boolean queued, String message, TrackCandidate candidate, PlaylistPreview playlist) {
+
+    public PlayResult(boolean queued, String message, TrackCandidate candidate) {
+      this(queued, message, candidate, null);
+    }
   }
 
   /** Current track plus the waiting queue, both without audio handles. */
@@ -62,10 +69,13 @@ public final class PlaybackService {
   private final VoiceConnector connector;
   private final TrackResolver resolver;
   private final MetadataLookup metadata;
+  private final PlaylistFlow playlistFlow;
   private final RateLimiter rateLimiter = new RateLimiter();
   private final Clock clock;
   private final int queueMax;
   private final int playCooldownS;
+  private final int resolveConcurrency;
+  private final Duration resolveTimeout;
   private volatile java.util.function.Consumer<Long> queueChanged = guildId -> {
   };
 
@@ -78,7 +88,9 @@ public final class PlaybackService {
     this.clock = clock;
     this.queueMax = config.queueMax();
     this.playCooldownS = config.playCooldownS();
-    Duration resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
+    this.resolveConcurrency = config.resolveConcurrency();
+    this.resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
+    Duration resolveTimeout = this.resolveTimeout;
     YoutubeAudioSourceManager youtube = createYoutubeSource(config);
     playerManager.registerSourceManager(youtube);
     playerManager.registerSourceManager(SoundCloudAudioSourceManager.createDefault());
@@ -108,6 +120,12 @@ public final class PlaybackService {
                 resolveTimeout)
             : null;
     this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify);
+    this.playlistFlow =
+        new PlaylistFlow(
+            resolver,
+            metadata,
+            Duration.ofSeconds(config.importSessionTtlS()),
+            clock);
   }
 
   PlaybackService(
@@ -116,9 +134,17 @@ public final class PlaybackService {
     this.clock = clock;
     this.queueMax = config.queueMax();
     this.playCooldownS = config.playCooldownS();
+    this.resolveConcurrency = config.resolveConcurrency();
+    this.resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
     this.resolver = resolver;
     this.metadata =
         new MetadataLookup(ITUNES_LOOKUP, Duration.ofMillis(config.resolveTimeoutMs()));
+    this.playlistFlow =
+        new PlaylistFlow(
+            resolver,
+            metadata,
+            Duration.ofSeconds(config.importSessionTtlS()),
+            clock);
   }
 
   public AudioPlayerSendHandler sendHandler(long guildId) {
@@ -166,6 +192,121 @@ public final class PlaybackService {
     return accepted;
   }
 
+  /** Playlist-confirm path only: no QUEUE_MAX cap. */
+  public int enqueueResolvedUnbounded(
+      long guildId, List<TrackCandidate> candidates, long addedBy) {
+    int accepted =
+        musicManager(guildId)
+            .enqueueAllUnbounded(
+                candidates.stream().map(PlaybackService::cloneOf).toList(), addedBy);
+    notifyChanged(guildId);
+    return accepted;
+  }
+
+  public Optional<PlaylistSession> playlistSession(java.util.UUID id) {
+    return playlistFlow.get(id);
+  }
+
+  public void cancelPlaylist(java.util.UUID id) {
+    playlistFlow.remove(id);
+  }
+
+  /**
+   * Confirms a playlist preview: either plays the single linked track or
+   * enqueues the whole list (the only unbounded queue path).
+   */
+  public CompletableFuture<String> confirmPlaylist(
+      java.util.UUID sessionId,
+      long userId,
+      long guildId,
+      boolean onlySingle,
+      long voiceChannelId) {
+    Optional<PlaylistSession> found = playlistFlow.get(sessionId);
+    if (found.isEmpty()) {
+      return CompletableFuture.completedFuture("That playlist expired.");
+    }
+    PlaylistSession session = found.orElseThrow();
+    if (session.userId() != userId || session.guildId() != guildId) {
+      return CompletableFuture.completedFuture("Only the requester can do that.");
+    }
+    if (onlySingle) {
+      if (session.singleTrackUri() == null) {
+        return CompletableFuture.completedFuture("That link has no single track.");
+      }
+      playlistFlow.remove(sessionId);
+      return playQuery(
+              guildId,
+              voiceChannelId,
+              userId,
+              new UrlQuery(Source.YOUTUBE, session.singleTrackUri()))
+          .thenApply(result -> result.queued() ? "Playing that track." : result.message());
+    }
+    playlistFlow.remove(sessionId);
+    if (!connector.connect(guildId, voiceChannelId)) {
+      return CompletableFuture.completedFuture("Could not join that voice channel.");
+    }
+    List<TrackCandidate> loaded =
+        session.items().stream()
+            .filter(item -> item.candidate() != null)
+            .map(PlaylistItem::candidate)
+            .toList();
+    List<PlaylistItem> metadataOnly =
+        session.items().stream().filter(item -> item.candidate() == null).toList();
+    if (metadataOnly.isEmpty()) {
+      int enqueued = enqueueResolvedUnbounded(guildId, loaded, userId);
+      return CompletableFuture.completedFuture("Enqueued " + enqueued + ".");
+    }
+    return resolvePlaylistItems(metadataOnly)
+        .thenApply(
+            resolved -> {
+              List<TrackCandidate> all = new java.util.ArrayList<>(loaded);
+              all.addAll(resolved);
+              int enqueued = enqueueResolvedUnbounded(guildId, all, userId);
+              int notFound = session.items().size() - all.size();
+              String report = "Enqueued " + enqueued + ".";
+              if (notFound > 0) {
+                report += " " + notFound + " not found.";
+              }
+              return report;
+            });
+  }
+
+  private CompletableFuture<List<TrackCandidate>> resolvePlaylistItems(
+      List<PlaylistItem> items) {
+    java.util.concurrent.Semaphore slots =
+        new java.util.concurrent.Semaphore(Math.max(1, resolveConcurrency));
+    java.util.List<CompletableFuture<TrackCandidate>> futures = new java.util.ArrayList<>();
+    for (PlaylistItem item : items) {
+      futures.add(
+          CompletableFuture.supplyAsync(
+                  () -> {
+                    try {
+                      slots.acquire();
+                      try {
+                        List<TrackCandidate> candidates =
+                            resolver
+                                .resolve(new TextQuery(item.searchText()))
+                                .get(resolveTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+                        return candidates.isEmpty() ? null : candidates.get(0);
+                      } finally {
+                        slots.release();
+                      }
+                    } catch (Exception failure) {
+                      return null;
+                    }
+                  },
+                  RESOLVE_EXECUTOR)
+              .thenApply(candidate -> (TrackCandidate) candidate));
+    }
+    return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+        .thenApply(
+            ignored ->
+                futures.stream()
+                    .map(CompletableFuture::join)
+                    .filter(candidate -> candidate != null)
+                    .toList());
+  }
+
   /** Resolves the input, enqueues the best candidate and reports what happened. */
   public CompletableFuture<PlayResult> play(
       long guildId, long voiceChannelId, long userId, String input) {
@@ -182,8 +323,16 @@ public final class PlaybackService {
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
     if (accepted.playlist()) {
-      // Replaced by the playlist-confirm flow; never load a list as one track.
-      return CompletableFuture.completedFuture(refused("Playlists are not supported yet."));
+      if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
+        return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
+      }
+      return playlistFlow
+          .preview(userId, guildId, accepted)
+          .thenApply(
+              preview ->
+                  preview.sessionId() == null
+                      ? refused(preview.error())
+                      : new PlayResult(false, "", null, preview));
     }
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {

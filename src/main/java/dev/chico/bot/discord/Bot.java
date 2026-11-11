@@ -78,6 +78,7 @@ public final class Bot {
             sessions);
     jda.addEventListener(new MessageListener(playbackRef.get(), importFlow, config));
     jda.addEventListener(new PreviewButtons(sessions, playbackRef.get(), config));
+    jda.addEventListener(new PlaylistConfirm(playbackRef.get()));
     jda.addEventListener(new ImageContextMenu(importFlow, config));
     new IdleMonitor(
             jda, playbackRef.get(), config.idleDisconnectS(), config.pausedDisconnectS())

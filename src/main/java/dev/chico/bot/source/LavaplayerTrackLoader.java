@@ -105,6 +105,39 @@ public final class LavaplayerTrackLoader implements TrackLoader {
     return future.orTimeout(loadTimeout.toMillis(), TimeUnit.MILLISECONDS);
   }
 
+  @Override
+  public CompletableFuture<List<TrackCandidate>> loadPlaylist(URI uri) {
+    CompletableFuture<List<TrackCandidate>> future = new CompletableFuture<>();
+    manager.loadItem(
+        uri.toString(),
+        new AudioLoadResultHandler() {
+          @Override
+          public void trackLoaded(AudioTrack track) {
+            future.complete(List.of(candidate(track, uri)));
+          }
+
+          @Override
+          public void playlistLoaded(AudioPlaylist playlist) {
+            List<TrackCandidate> candidates = new ArrayList<>();
+            for (AudioTrack track : playlist.getTracks()) {
+              candidates.add(candidate(track, uri));
+            }
+            future.complete(List.copyOf(candidates));
+          }
+
+          @Override
+          public void noMatches() {
+            future.complete(List.of());
+          }
+
+          @Override
+          public void loadFailed(FriendlyException exception) {
+            future.completeExceptionally(exception);
+          }
+        });
+    return future.orTimeout(loadTimeout.toMillis(), TimeUnit.MILLISECONDS);
+  }
+
   private TrackCandidate candidate(AudioTrack track, URI fallbackUri) {
     AudioTrackInfo info = track.getInfo();
     URI uri = fallbackUri;

@@ -139,6 +139,47 @@ public final class Embeds {
     return ". (+" + droppedImages + " images skipped, max 10).";
   }
 
+  /** Preview of a playlist link before anything is enqueued. */
+  public static MessageEmbed playlistPreview(
+      List<dev.chico.bot.application.PlaylistItem> items,
+      int page,
+      boolean canPlaySingle,
+      String note) {
+    EmbedBuilder builder = new EmbedBuilder().setTitle("Playlist preview").setColor(Color.BLUE);
+    if (items.isEmpty()) {
+      String message =
+          note != null && !note.isBlank() ? note : "That playlist is empty.";
+      builder.setDescription(TextSanitizer.escape(message));
+      return builder.build();
+    }
+    int pageSize = 10;
+    int totalPages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
+    int current = Math.min(Math.max(page, 0), totalPages - 1);
+    int from = current * pageSize;
+    int to = Math.min(from + pageSize, items.size());
+    StringBuilder lines = new StringBuilder();
+    for (int i = from; i < to; i++) {
+      dev.chico.bot.application.PlaylistItem item = items.get(i);
+      lines.append(i + 1).append(". ").append(TextSanitizer.escape(item.title()));
+      if (item.artist() != null && !item.artist().isBlank()) {
+        lines.append(" - ").append(TextSanitizer.escape(item.artist()));
+      }
+      lines.append('\n');
+    }
+    builder.setDescription(truncate(lines.toString().trim()));
+    String footer = "Showing " + (from + 1) + "–" + to + " of " + items.size() + ".";
+    if (note != null && !note.isBlank()) {
+      footer += " " + note;
+    }
+    builder.setFooter(footer);
+    return builder.build();
+  }
+
+  @Deprecated
+  public static MessageEmbed playlistPreview(
+      List<dev.chico.bot.application.PlaylistItem> items, int page) {
+    return playlistPreview(items, page, false, null);
+  }
   /** Cuts at the last line break so no track line is ever half-shown. */
   private static String truncate(String text) {
     if (text.length() <= MAX_DESCRIPTION) {
