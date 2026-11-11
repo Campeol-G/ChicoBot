@@ -118,7 +118,7 @@ public final class Embeds {
     if (droppedImages <= 0) {
       return ".";
     }
-    return ". (+" + droppedImages + " images skipped, max 5).";
+    return ". (+" + droppedImages + " images skipped, max 10).";
   }
 
   /** Cuts at the last line break so no track line is ever half-shown. */

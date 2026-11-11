@@ -138,28 +138,43 @@ class ImportFromImageTest {
   }
 
   @Test
-  void sixthImageCountsAsDropped() throws Exception {
+  void eleventhImageCountsAsDropped() throws Exception {
+    byte[] png = tinyPng();
+    List<OcrResult> results = new ArrayList<>();
+    List<AttachmentInput> eleven = new ArrayList<>();
+    for (int i = 0; i < 11; i++) {
+      results.add(lines(List.of("Track" + i)));
+      eleven.add(attachment("image" + i + ".png"));
+    }
+    var ocr = new FakeOcr(results);
+
+    var result = flow(new FakeDownloader(png), ocr).run(7L, 9L, eleven).join();
+
+    assertEquals(10, result.tracks().size());
+    assertEquals(10, result.totalDetected());
+    assertEquals(1, result.droppedImages());
+  }
+
+  @Test
+  void reportsProgressPerImage() throws Exception {
     byte[] png = tinyPng();
     var ocr =
         new FakeOcr(
             List.of(
                 lines(List.of("Alpha")),
                 lines(List.of("Beta")),
-                lines(List.of("Gamma")),
-                lines(List.of("Delta")),
-                lines(List.of("Epsilon"))));
-    List<AttachmentInput> six =
-        List.of(
-            attachment("a.png"),
-            attachment("b.png"),
-            attachment("c.png"),
-            attachment("d.png"),
-            attachment("e.png"),
-            attachment("f.png"));
-    var result = flow(new FakeDownloader(png), ocr).run(7L, 9L, six).join();
-    assertEquals(5, result.tracks().size());
-    assertEquals(5, result.totalDetected());
-    assertEquals(1, result.droppedImages());
+                lines(List.of("Gamma"))));
+    List<String> progress = new ArrayList<>();
+
+    flow(new FakeDownloader(png), ocr)
+        .run(
+            7L,
+            9L,
+            List.of(attachment("a.png"), attachment("b.png"), attachment("c.png")),
+            (done, total) -> progress.add(done + "/" + total))
+        .join();
+
+    assertEquals(List.of("1/3", "2/3", "3/3"), progress);
   }
 
   @Test

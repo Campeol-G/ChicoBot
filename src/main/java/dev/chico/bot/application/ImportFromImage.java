@@ -57,6 +57,12 @@ public final class ImportFromImage {
   }
 
   private static final ExecutorService EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+  static final int MAX_IMAGES = 10;
+
+  /** Called once per image after download+OCR+parse complete. */
+  public interface ImportProgress {
+    void onImage(int completed, int total);
+  }
 
   private final ImageDownloader downloader;
   private final OcrEngine ocr;
@@ -90,10 +96,19 @@ public final class ImportFromImage {
 
   public CompletableFuture<ImportResult> run(
       long userId, long guildId, List<AttachmentInput> attachments) {
+    return run(userId, guildId, attachments, (completed, total) -> {
+    });
+  }
+
+  public CompletableFuture<ImportResult> run(
+      long userId,
+      long guildId,
+      List<AttachmentInput> attachments,
+      ImportProgress progress) {
     return CompletableFuture.supplyAsync(
             () -> {
               try {
-                return importSync(userId, guildId, attachments);
+                return importSync(userId, guildId, attachments, progress);
               } catch (ImportException e) {
                 throw new CompletionException(e);
               }
@@ -101,7 +116,9 @@ public final class ImportFromImage {
             EXECUTOR)
         // POR QUE: one slot covers download+preprocess+OCR per image, so the
         // total fits in images * (HTTP timeout + OCR timeout) plus slack.
-        .orTimeout(5 * (10_000 + ocrTimeout.toMillis()) + 5_000, TimeUnit.MILLISECONDS)
+        .orTimeout(
+            MAX_IMAGES * (10_000 + ocrTimeout.toMillis()) + 5_000,
+            TimeUnit.MILLISECONDS)
         .exceptionallyCompose(
             failure -> {
               Throwable cause =
@@ -116,9 +133,13 @@ public final class ImportFromImage {
             });
   }
 
-  private ImportResult importSync(long userId, long guildId, List<AttachmentInput> attachments)
+  private ImportResult importSync(
+      long userId,
+      long guildId,
+      List<AttachmentInput> attachments,
+      ImportProgress progress)
       throws ImportException {
-    List<AttachmentInput> first = attachments.stream().limit(5).toList();
+    List<AttachmentInput> first = attachments.stream().limit(MAX_IMAGES).toList();
     if (first.isEmpty()) {
       throw new ImportException(Reason.NO_IMAGES, "Send an image with your mention.");
     }
@@ -131,6 +152,7 @@ public final class ImportFromImage {
       int index = 0;
       for (AttachmentInput in : first) {
         perImage.add(readOne(in, index++));
+        progress.onImage(index, first.size());
       }
       List<ParsedTrack> merged = TrackListMerger.merge(perImage);
       int total = merged.size();

@@ -133,9 +133,25 @@ public final class MessageListener extends ListenerAdapter {
         .reply("Reading the image…")
         .setAllowedMentions(Collections.emptyList())
         .queue(
-            progress ->
-                importFlow
-                    .run(userId, event.getGuild().getIdLong(), inputs)
+            progress -> {
+              ProgressThrottle throttle = new ProgressThrottle(2000);
+              importFlow
+                  .run(
+                      userId,
+                      event.getGuild().getIdLong(),
+                      inputs,
+                      (done, total) -> {
+                        if (done < total && throttle.allow()) {
+                          progress
+                              .editMessage(
+                                  new MessageEditBuilder()
+                                      .setContent(
+                                          "Reading image " + done + "/" + total + "…")
+                                      .setAllowedMentions(Collections.emptyList())
+                                      .build())
+                              .queue(null, err -> log.warn("progress edit failed", err));
+                        }
+                      })
                     .thenAccept(
                         result ->
                             progress
@@ -162,6 +178,7 @@ public final class MessageListener extends ListenerAdapter {
                                       .build())
                               .queue();
                           return null;
-                        }));
+                        });
+            });
   }
 }

@@ -17,6 +17,9 @@ import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
 /** "Play music from image" message command for older image messages. */
 public final class ImageContextMenu extends ListenerAdapter {
 
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(ImageContextMenu.class);
+
   static final String COMMAND = "Play music from image";
 
   private final ImportFromImage importFlow;
@@ -62,8 +65,26 @@ public final class ImageContextMenu extends ListenerAdapter {
           .queue();
       return;
     }
+    event
+        .getHook()
+        .editOriginal("Reading the image…")
+        .setAllowedMentions(Collections.emptyList())
+        .queue(null, err -> log.warn("progress edit failed", err));
+    ProgressThrottle throttle = new ProgressThrottle(2000);
     importFlow
-        .run(userId, event.getGuild().getIdLong(), inputs)
+        .run(
+            userId,
+            event.getGuild().getIdLong(),
+            inputs,
+            (done, total) -> {
+              if (done < total && throttle.allow()) {
+                event
+                    .getHook()
+                    .editOriginal("Reading image " + done + "/" + total + "…")
+                    .setAllowedMentions(Collections.emptyList())
+                    .queue(null, err -> log.warn("progress edit failed", err));
+              }
+            })
         .thenAccept(
             result ->
                 event
