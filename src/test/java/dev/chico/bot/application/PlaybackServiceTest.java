@@ -331,6 +331,78 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void skipNeedsMajorityForSomeoneElsesTrack() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha")), 100L);
+    service.enqueueResolved(1L, List.of(candidate("Beta")), 200L);
+    java.util.Set<Long> humans = java.util.Set.of(100L, 200L, 300L);
+
+    assertEquals(
+        "Skipped 1/2.", service.skip(1L, Optional.empty(), 300L, humans));
+    assertEquals("Alpha", service.queueView(1L).current().orElseThrow().title());
+
+    assertTrue(
+        service.skip(1L, Optional.empty(), 200L, humans).startsWith("Skipped to Beta."));
+    assertEquals("Beta", service.queueView(1L).current().orElseThrow().title());
+  }
+
+  @Test
+  void ownerSkipsImmediately() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha")), 100L);
+    service.enqueueResolved(1L, List.of(candidate("Beta")), 100L);
+
+    assertTrue(
+        service
+            .skip(1L, Optional.empty(), 100L, java.util.Set.of(100L, 200L, 300L))
+            .startsWith("Skipped to Beta."));
+  }
+
+  @Test
+  void legacyTrackIsFreeForAnyone() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha"), candidate("Beta")));
+
+    assertTrue(
+        service
+            .skip(1L, Optional.empty(), 300L, java.util.Set.of(100L, 200L, 300L))
+            .startsWith("Skipped to Beta."));
+  }
+
+  @Test
+  void removeNeedsMajorityForSomeoneElsesTrack() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha")), 100L);
+    service.enqueueResolved(1L, List.of(candidate("Beta")), 200L);
+    java.util.Set<Long> humans = java.util.Set.of(100L, 200L, 300L);
+
+    assertEquals("Removed 1/2.", service.remove(1L, "2", 300L, humans));
+    assertEquals(1, service.queueView(1L).queued().size());
+
+    assertEquals("Removed Beta (position 2).", service.remove(1L, "2", 100L, humans));
+    assertTrue(service.queueView(1L).queued().isEmpty());
+  }
+
+  @Test
+  void voteExpiresSilently() {
+    MutableClock clock = new MutableClock(Instant.parse("2026-11-07T12:00:00Z"));
+    PlaybackService service =
+        serviceWith(
+            new SilentVoice(),
+            new Config(Map.of("DISCORD_TOKEN", "test")),
+            clock,
+            new EmptyResolver());
+    service.enqueueResolved(1L, List.of(candidate("Alpha")), 100L);
+    java.util.Set<Long> humans = java.util.Set.of(100L, 200L, 300L);
+    assertEquals("Skipped 1/2.", service.skip(1L, Optional.empty(), 300L, humans));
+
+    clock.advance(Duration.ofSeconds(61));
+
+    assertEquals("Skipped 1/2.", service.skip(1L, Optional.empty(), 200L, humans));
+    assertEquals("Alpha", service.queueView(1L).current().orElseThrow().title());
+  }
+
+  @Test
   void isPausedReflectsPlayerState() {
     PlaybackService service = service();
     assertFalse(service.isPaused(1L));

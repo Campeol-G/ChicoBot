@@ -154,7 +154,13 @@ public final class MusicCommands extends ListenerAdapter {
     OptionMapping option = event.getOption("target");
     Optional<String> target =
         option == null ? Optional.empty() : Optional.of(option.getAsString());
-    reply(event, playback.skip(guildOf(event), target));
+    reply(
+        event,
+        playback.skip(
+            guildOf(event),
+            target,
+            event.getUser().getIdLong(),
+            voiceHumans(event.getGuild())));
   }
 
   private void onRemove(SlashCommandInteractionEvent event) {
@@ -165,7 +171,25 @@ public final class MusicCommands extends ListenerAdapter {
     if (option == null) {
       return;
     }
-    reply(event, playback.remove(guildOf(event), option.getAsString()));
+    reply(
+        event,
+        playback.remove(
+            guildOf(event),
+            option.getAsString(),
+            event.getUser().getIdLong(),
+            voiceHumans(event.getGuild())));
+  }
+
+  /** Non-bot humans in the bot's current voice channel (vote denominator). */
+  private static java.util.Set<Long> voiceHumans(Guild guild) {
+    var channel = guild.getAudioManager().getConnectedChannel();
+    if (channel == null) {
+      return java.util.Set.of();
+    }
+    return channel.getMembers().stream()
+        .filter(member -> !member.getUser().isBot())
+        .map(net.dv8tion.jda.api.entities.Member::getIdLong)
+        .collect(java.util.stream.Collectors.toSet());
   }
 
   private void onLoop(SlashCommandInteractionEvent event) {

@@ -73,6 +73,7 @@ public final class PlaybackService {
   private final Map<Source, TrackLoader> loaders;
   private final Ranker ranker;
   private final AudioRecovery audioRecovery;
+  private final VoteStore votes;
   private final Map<Long, java.util.Set<Long>> retriedItems = new ConcurrentHashMap<>();
   private final RateLimiter rateLimiter = new RateLimiter();
   private final Clock clock;
@@ -137,6 +138,7 @@ public final class PlaybackService {
             clock);
     this.audioRecovery =
         new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
+    this.votes = new VoteStore(clock);
   }
 
   PlaybackService(
@@ -160,6 +162,7 @@ public final class PlaybackService {
     this.ranker = new Ranker(config.matchThreshold());
     this.audioRecovery =
         new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
+    this.votes = new VoteStore(clock);
   }
 
   public AudioPlayerSendHandler sendHandler(long guildId) {
@@ -474,11 +477,21 @@ public final class PlaybackService {
     synchronized (music) {
       music.scheduler().stopAndClear();
     }
+    votes.clearGuild(guildId);
     notifyChanged(guildId);
     return "Stopped and cleared the queue.";
   }
 
   public String skip(long guildId, Optional<String> target) {
+    return skip(guildId, target, 0L, java.util.Set.of());
+  }
+
+  /**
+   * Skips immediately when the caller owns the target or the call has fewer
+   * than three humans; otherwise records a vote on the target identity.
+   */
+  public String skip(
+      long guildId, Optional<String> target, long userId, java.util.Set<Long> voiceHumans) {
     GuildMusicManager music = managers.get(guildId);
     if (music == null || music.scheduler().current().isEmpty()) {
       return "Nothing to skip.";
@@ -491,6 +504,11 @@ public final class PlaybackService {
       }
       TrackCandidate oldCurrent = currentNow.orElseThrow();
       if (trimmed.isEmpty() || isDisplayOne(trimmed)) {
+        String voteReply =
+            voteIfNeeded(guildId, VoteStore.Action.SKIP, oldCurrent, userId, voiceHumans);
+        if (voteReply != null) {
+          return voteReply;
+        }
         music.scheduler().clearLoop();
         music.scheduler().nextTrack();
         Optional<TrackCandidate> now = music.scheduler().current();
@@ -510,6 +528,15 @@ public final class PlaybackService {
       }
       int queueIndex = index.orElseThrow() - 1;
       List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
+      if (queueIndex < 0 || queueIndex >= queued.size()) {
+        return "No queued track matches that.";
+      }
+      TrackCandidate actionTarget = queued.get(queueIndex);
+      String voteReply =
+          voteIfNeeded(guildId, VoteStore.Action.SKIP, actionTarget, userId, voiceHumans);
+      if (voteReply != null) {
+        return voteReply;
+      }
       List<TrackCandidate> skipped = new java.util.ArrayList<>();
       skipped.add(oldCurrent);
       for (int i = 0; i < queueIndex && i < queued.size(); i++) {
@@ -529,6 +556,40 @@ public final class PlaybackService {
               : escapeTitle(now.orElseThrow());
       return "Skipped to " + targetLabel + ".\n" + skippedList(skipped, true);
     }
+  }
+
+  /** Null means "execute now"; otherwise the pending-vote reply. */
+  private String voteIfNeeded(
+      long guildId,
+      VoteStore.Action action,
+      TrackCandidate target,
+      long userId,
+      java.util.Set<Long> voiceHumans) {
+    if (voiceHumans.size() < 3 || target.addedBy() == 0 || target.addedBy() == userId) {
+      votes.retireItem(guildId, target.itemId());
+      return null;
+    }
+    votes.pruneGuild(guildId, liveItemIds(guildId));
+    VoteStore.Result result =
+        votes.vote(guildId, action, target.itemId(), userId, voiceHumans.size());
+    if (result.passed()) {
+      return null;
+    }
+    String verb = action == VoteStore.Action.SKIP ? "Skipped" : "Removed";
+    return verb + " " + result.votes() + "/" + result.needed() + ".";
+  }
+
+  private java.util.Set<Long> liveItemIds(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null) {
+      return java.util.Set.of();
+    }
+    java.util.Set<Long> ids = new java.util.HashSet<>();
+    music.scheduler().current().ifPresent(candidate -> ids.add(candidate.itemId()));
+    for (TrackCandidate candidate : music.scheduler().queueView().snapshot()) {
+      ids.add(candidate.itemId());
+    }
+    return ids;
   }
 
   private static boolean isDisplayOne(String target) {
@@ -573,6 +634,15 @@ public final class PlaybackService {
   }
 
   public String remove(long guildId, String target) {
+    return remove(guildId, target, 0L, java.util.Set.of());
+  }
+
+  /**
+   * Removes immediately when the caller owns the target or the call has fewer
+   * than three humans; otherwise records a vote on the target identity.
+   */
+  public String remove(
+      long guildId, String target, long userId, java.util.Set<Long> voiceHumans) {
     GuildMusicManager music = managers.get(guildId);
     if (music == null) {
       return "The queue is empty.";
@@ -597,8 +667,22 @@ public final class PlaybackService {
       if (index.isEmpty()) {
         return "No queued track matches that.";
       }
-      Optional<TrackCandidate> removed =
-          music.scheduler().removeAt(index.orElseThrow() - 1);
+      List<TrackCandidate> queued = music.scheduler().queueView().snapshot();
+      int queueIndex = index.orElseThrow() - 1;
+      if (queueIndex < 0 || queueIndex >= queued.size()) {
+        return "No queued track matches that.";
+      }
+      String voteReply =
+          voteIfNeeded(
+              guildId,
+              VoteStore.Action.REMOVE,
+              queued.get(queueIndex),
+              userId,
+              voiceHumans);
+      if (voteReply != null) {
+        return voteReply;
+      }
+      Optional<TrackCandidate> removed = music.scheduler().removeAt(queueIndex);
       if (removed.isEmpty()) {
         return "No queued track matches that.";
       }
@@ -650,6 +734,7 @@ public final class PlaybackService {
       }
     }
     connector.disconnect(guildId);
+    votes.clearGuild(guildId);
     notifyChanged(guildId);
     return "Left the voice channel.";
   }
