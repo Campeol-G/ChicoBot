@@ -35,6 +35,7 @@ public final class TrackScheduler extends AudioEventAdapter {
 
   private final AudioPlayer player;
   private final TrackQueue<TrackCandidate> queue;
+  private final Runnable onChange;
   private volatile TrackCandidate current;
   private volatile TrackCandidate pending;
   private volatile boolean advancing;
@@ -46,8 +47,14 @@ public final class TrackScheduler extends AudioEventAdapter {
   private int loopCursor;
 
   public TrackScheduler(AudioPlayer player, int maxQueue) {
+    this(player, maxQueue, () -> {
+    });
+  }
+
+  public TrackScheduler(AudioPlayer player, int maxQueue, Runnable onChange) {
     this.player = player;
     this.queue = new TrackQueue<>(maxQueue);
+    this.onChange = onChange;
   }
 
   public synchronized boolean queue(TrackCandidate candidate) {
@@ -124,6 +131,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     current = null;
     pending = null;
     clearLoop();
+    changed();
   }
 
   public Optional<TrackCandidate> current() {
@@ -201,6 +209,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (pending != null && pending.track() == track) {
       current = pending;
     }
+    changed();
   }
 
   @Override
@@ -215,6 +224,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (!endReason.mayStartNext) {
       current = null;
       pending = null;
+      changed();
       return;
     }
     if (current != null && current.track() == track) {
@@ -236,6 +246,15 @@ public final class TrackScheduler extends AudioEventAdapter {
         removeFromCycle(current.itemId());
       }
       nextTrack();
+      changed();
+    }
+  }
+
+  private void changed() {
+    try {
+      onChange.run();
+    } catch (RuntimeException ignored) {
+      // A UI refresh must never break playback.
     }
   }
 

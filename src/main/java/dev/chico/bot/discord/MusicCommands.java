@@ -32,9 +32,11 @@ public final class MusicCommands extends ListenerAdapter {
   private static final Logger log = LoggerFactory.getLogger(MusicCommands.class);
 
   private final PlaybackService playback;
+  private final QueueLive liveQueue;
 
-  public MusicCommands(PlaybackService playback) {
+  public MusicCommands(PlaybackService playback, QueueLive liveQueue) {
     this.playback = playback;
+    this.liveQueue = liveQueue;
   }
 
   /** One list, registered per guild in dev and globally otherwise. */
@@ -174,18 +176,13 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("This only works in a server.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
-    event.deferReply().queue(null, err -> log.warn("deferReply failed", err));
-    QueueView view = playback.queueView(guildOf(event));
-    if (view.current().isEmpty() && view.queued().isEmpty()) {
-      event.getHook().sendMessageEmbeds(Embeds.error("The queue is empty.")).queue(
-          null, err -> log.warn("queue reply failed", err));
-      return;
-    }
-    List<dev.chico.bot.source.TrackCandidate> all = new java.util.ArrayList<>();
-    view.current().ifPresent(all::add);
-    all.addAll(view.queued());
-    event.getHook().sendMessageEmbeds(Embeds.queue(all, playback.loopView(guildOf(event)))).queue(
-        null, err -> log.warn("queue reply failed", err));
+    event.deferReply(true).queue(null, err -> log.warn("deferReply failed", err));
+    liveQueue.post(event.getGuild().getIdLong(), event.getChannel());
+    event
+        .getHook()
+        .sendMessage("Live queue posted below.")
+        .setEphemeral(true)
+        .queue(null, err -> log.warn("queue reply failed", err));
   }
 
   private void onNowPlaying(SlashCommandInteractionEvent event) {

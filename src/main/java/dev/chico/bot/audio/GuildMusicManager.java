@@ -15,8 +15,13 @@ public final class GuildMusicManager {
   private final AtomicLong nextItemId = new AtomicLong();
 
   public GuildMusicManager(AudioPlayerManager manager, int queueMax) {
+    this(manager, queueMax, () -> {
+    });
+  }
+
+  public GuildMusicManager(AudioPlayerManager manager, int queueMax, Runnable onChange) {
     this.player = manager.createPlayer();
-    this.scheduler = new TrackScheduler(player, queueMax);
+    this.scheduler = new TrackScheduler(player, queueMax, onChange);
     this.player.addListener(scheduler);
     this.sendHandler = new AudioPlayerSendHandler(player);
   }

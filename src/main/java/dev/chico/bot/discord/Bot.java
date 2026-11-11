@@ -59,8 +59,10 @@ public final class Bot {
     JdaVoiceConnector connector =
         new JdaVoiceConnector(jda, guildId -> playbackRef.get().sendHandler(guildId));
     playbackRef.set(new PlaybackService(connector, config));
-    MusicCommands commands = new MusicCommands(playbackRef.get());
+    QueueLive liveQueue = new QueueLive(jda, playbackRef.get());
+    MusicCommands commands = new MusicCommands(playbackRef.get(), liveQueue);
     jda.addEventListener(commands);
+    playbackRef.get().setQueueChangeListener(liveQueue::refreshIfPresent);
     ImportSession.Store sessions =
         new ImportSession.Store(
             java.time.Duration.ofSeconds(config.importSessionTtlS()),

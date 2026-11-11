@@ -10,10 +10,10 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.exceptions.ErrorResponseException;
 import net.dv8tion.jda.api.requests.ErrorResponse;
+import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,8 +103,12 @@ public final class QueueLive {
                 return;
               }
               channel
-                  .editMessageById(entry.messageId(), embed(guildId))
-                  .setAllowedMentions(Collections.emptyList())
+                  .editMessageById(
+                      entry.messageId(),
+                      new MessageEditBuilder()
+                          .setEmbeds(embed(guildId))
+                          .setAllowedMentions(Collections.emptyList())
+                          .build())
                   .queue(null, failure -> onEditFailure(guildId, failure));
             });
   }

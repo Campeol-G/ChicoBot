@@ -66,6 +66,8 @@ public final class PlaybackService {
   private final Clock clock;
   private final int queueMax;
   private final int playCooldownS;
+  private volatile java.util.function.Consumer<Long> queueChanged = guildId -> {
+  };
 
   public PlaybackService(VoiceConnector connector, Config config) {
     this(connector, config, Clock.systemUTC());
@@ -123,6 +125,20 @@ public final class PlaybackService {
     return musicManager(guildId).sendHandler();
   }
 
+  /** Discord-side hook: called after every queue/playback change. */
+  public void setQueueChangeListener(java.util.function.Consumer<Long> listener) {
+    this.queueChanged = listener == null ? guildId -> {
+    } : listener;
+  }
+
+  private void notifyChanged(long guildId) {
+    try {
+      queueChanged.accept(guildId);
+    } catch (RuntimeException e) {
+      log.debug("queue change listener failed", e);
+    }
+  }
+
   /** Resolves one query to ordered candidates. Used by the import preview. */
   public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
     return resolver.resolve(query);
@@ -143,8 +159,11 @@ public final class PlaybackService {
 
   /** Same, attributing every accepted item to {@code addedBy}. */
   public int enqueueResolved(long guildId, List<TrackCandidate> candidates, long addedBy) {
-    return musicManager(guildId)
-        .enqueueAll(candidates.stream().map(PlaybackService::cloneOf).toList(), addedBy);
+    int accepted =
+        musicManager(guildId)
+            .enqueueAll(candidates.stream().map(PlaybackService::cloneOf).toList(), addedBy);
+    notifyChanged(guildId);
+    return accepted;
   }
 
   /** Resolves the input, enqueues the best candidate and reports what happened. */
@@ -200,6 +219,7 @@ public final class PlaybackService {
       return "Nothing is playing.";
     }
     music.player().setPaused(true);
+    notifyChanged(guildId);
     return "Paused.";
   }
 
@@ -209,6 +229,7 @@ public final class PlaybackService {
       return "Nothing to resume.";
     }
     music.player().setPaused(false);
+    notifyChanged(guildId);
     return "Resumed.";
   }
 
@@ -220,6 +241,7 @@ public final class PlaybackService {
     if (lowered.equals("disable")) {
       if (music != null) {
         music.scheduler().clearLoop();
+        notifyChanged(guildId);
       }
       return "Loop disabled.";
     }
@@ -227,15 +249,19 @@ public final class PlaybackService {
       return "Nothing is playing.";
     }
     if (lowered.isEmpty() || lowered.equals("1")) {
-      return music.scheduler().loopCurrent().isPresent()
-          ? "Looping current track."
-          : "Nothing is playing.";
+      boolean looped = music.scheduler().loopCurrent().isPresent();
+      if (looped) {
+        notifyChanged(guildId);
+      }
+      return looped ? "Looping current track." : "Nothing is playing.";
     }
     if (lowered.equals("all")) {
-      return music
-          .scheduler()
-          .loopAll()
-          .map(size -> "Looping queue (" + size + " tracks).")
+      Optional<Integer> size = music.scheduler().loopAll();
+      if (size.isPresent()) {
+        notifyChanged(guildId);
+      }
+      return size
+          .map(value -> "Looping queue (" + value + " tracks).")
           .orElse("Nothing is playing.");
     }
     int position;
@@ -251,12 +277,14 @@ public final class PlaybackService {
         .scheduler()
         .loopAt(position)
         .map(
-            marked ->
-                "Looping track "
-                    + position
-                    + " - "
-                    + dev.chico.bot.security.TextSanitizer.escape(marked.title())
-                    + ".")
+            marked -> {
+              notifyChanged(guildId);
+              return "Looping track "
+                  + position
+                  + " - "
+                  + dev.chico.bot.security.TextSanitizer.escape(marked.title())
+                  + ".";
+            })
         .orElse("No queued track matches that.");
   }
 
@@ -275,6 +303,7 @@ public final class PlaybackService {
     synchronized (music) {
       music.scheduler().stopAndClear();
     }
+    notifyChanged(guildId);
     return "Stopped and cleared the queue.";
   }
 
@@ -295,8 +324,10 @@ public final class PlaybackService {
         music.scheduler().nextTrack();
         Optional<TrackCandidate> now = music.scheduler().current();
         if (now.isEmpty()) {
+          notifyChanged(guildId);
           return "Skipped " + escapeTitle(oldCurrent) + ". Nothing is playing.";
         }
+        notifyChanged(guildId);
         return "Skipped to "
             + escapeTitle(now.orElseThrow())
             + ".\n"
@@ -317,8 +348,10 @@ public final class PlaybackService {
       music.scheduler().skipTo(queueIndex);
       Optional<TrackCandidate> now = music.scheduler().current();
       if (now.isEmpty()) {
+        notifyChanged(guildId);
         return "Skipped. Nothing is playing.\n" + skippedList(skipped, true);
       }
+      notifyChanged(guildId);
       String targetLabel =
           isNumeric(trimmed)
               ? (index.orElseThrow() + 1) + " - " + escapeTitle(now.orElseThrow())
@@ -409,6 +442,7 @@ public final class PlaybackService {
         // Name match keeps index+1.
       }
     }
+    notifyChanged(guildId);
     return "Removed " + removedTitle + " (position " + displayPosition + ").";
   }
 
@@ -444,6 +478,7 @@ public final class PlaybackService {
       }
     }
     connector.disconnect(guildId);
+    notifyChanged(guildId);
     return "Left the voice channel.";
   }
 
@@ -564,6 +599,9 @@ public final class PlaybackService {
 
   private GuildMusicManager musicManager(long guildId) {
     return managers.computeIfAbsent(
-        guildId, id -> new GuildMusicManager(playerManager, queueMax));
+        guildId,
+        id ->
+            new GuildMusicManager(
+                playerManager, queueMax, () -> notifyChanged(id)));
   }
 }
