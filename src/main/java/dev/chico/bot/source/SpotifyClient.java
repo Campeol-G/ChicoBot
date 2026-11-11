@@ -2,7 +2,6 @@ package dev.chico.bot.source;
 
 import com.sedmelluq.discord.lavaplayer.tools.JsonBrowser;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;

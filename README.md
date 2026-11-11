@@ -30,6 +30,9 @@ via Tesseract (`@bot` + image → preview → Play all).
   paginated confirmation before enqueueing. Confirmed playlists are the only
   path allowed past `QUEUE_MAX`; private or unavailable playlists get their
   own error.
+- Skipping/removing someone else's track in a call with 3+ humans needs a
+  majority vote (`Skipped 1/2.`); your own track is always immediate. `/stop`
+  and `/leave` stay free for anyone.
 
 ## Requirements
 

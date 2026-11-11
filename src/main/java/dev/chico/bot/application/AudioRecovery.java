@@ -29,8 +29,12 @@ public final class AudioRecovery {
   }
 
   public CompletableFuture<Optional<TrackCandidate>> recover(
-      TrackCandidate failed, FriendlyException failure, boolean alreadyRetried) {
-    if (!alreadyRetried && retryEligible(failure) && failed.uri() != null) {
+      TrackCandidate failed, FriendlyException failure, int attempt) {
+    if (attempt >= 3) {
+      // One reload + one fallback per queue item; never loop forever.
+      return CompletableFuture.completedFuture(Optional.empty());
+    }
+    if (attempt <= 1 && retryEligible(failure) && failed.uri() != null) {
       return reloader
           .apply(failed)
           .thenApply(Optional::ofNullable)

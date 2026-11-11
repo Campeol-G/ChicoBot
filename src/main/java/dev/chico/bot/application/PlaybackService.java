@@ -74,7 +74,7 @@ public final class PlaybackService {
   private final Ranker ranker;
   private final AudioRecovery audioRecovery;
   private final VoteStore votes;
-  private final Map<Long, java.util.Set<Long>> retriedItems = new ConcurrentHashMap<>();
+  private final Map<Long, Map<Long, Integer>> failureAttempts = new ConcurrentHashMap<>();
   private final RateLimiter rateLimiter = new RateLimiter();
   private final Clock clock;
   private final int queueMax;
@@ -347,10 +347,10 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
+    if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
+      return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
+    }
     if (accepted.playlist()) {
-      if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
-        return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
-      }
       return playlistFlow
           .preview(userId, guildId, accepted)
           .thenApply(
@@ -359,10 +359,42 @@ public final class PlaybackService {
                       ? refused(preview.error())
                       : new PlayResult(false, "", null, preview));
     }
-    UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
-    if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
-      return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
+    if (accepted.source() == Source.SPOTIFY) {
+      // Track links and spotify.link shorts: the content type is only known
+      // after resolving, so playlists can still reach the confirm preview.
+      UrlQuery spotifyQuery = new UrlQuery(Source.SPOTIFY, accepted.uri());
+      return metadata
+          .spotifyContent(spotifyQuery)
+          .thenCompose(
+              content -> {
+                if (content.kind() == dev.chico.bot.source.SpotifyClient.Kind.PLAYLIST
+                    || content.unavailable()) {
+                  PlaylistPreview preview =
+                      playlistFlow.fromContent(
+                          userId, guildId, content, accepted.singleTrack());
+                  return CompletableFuture.completedFuture(
+                      preview.sessionId() == null
+                          ? refused(preview.error())
+                          : new PlayResult(false, "", null, preview));
+                }
+                if (content.kind() == dev.chico.bot.source.SpotifyClient.Kind.TRACK
+                    && !content.tracks().isEmpty()) {
+                  return playQuery(
+                      guildId,
+                      voiceChannelId,
+                      userId,
+                      new TextQuery(content.tracks().get(0)));
+                }
+                return CompletableFuture.completedFuture(
+                    refused("Could not read that link. Send the track name instead."));
+              })
+          .exceptionally(
+              failure -> {
+                log.warn("Spotify resolve failed", failure);
+                return refused("Could not read that link. Send the track name instead.");
+              });
     }
+    UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
       return playQuery(guildId, voiceChannelId, userId, query)
           .thenApply(
@@ -478,6 +510,7 @@ public final class PlaybackService {
       music.scheduler().stopAndClear();
     }
     votes.clearGuild(guildId);
+    failureAttempts.remove(guildId);
     notifyChanged(guildId);
     return "Stopped and cleared the queue.";
   }
@@ -698,7 +731,11 @@ public final class PlaybackService {
       }
     }
     notifyChanged(guildId);
-    return "Removed " + removedTitle + " (position " + displayPosition + ").";
+    return "Removed "
+        + dev.chico.bot.security.TextSanitizer.escape(removedTitle)
+        + " (position "
+        + displayPosition
+        + ").";
   }
 
   public QueueView queueView(long guildId) {
@@ -727,7 +764,7 @@ public final class PlaybackService {
 
   public String leave(long guildId) {
     GuildMusicManager music = managers.remove(guildId);
-    retriedItems.remove(guildId);
+    failureAttempts.remove(guildId);
     if (music != null) {
       synchronized (music) {
         music.scheduler().stopAndClear();
@@ -871,11 +908,12 @@ public final class PlaybackService {
       dev.chico.bot.audio.TrackScheduler scheduler,
       TrackCandidate failed,
       com.sedmelluq.discord.lavaplayer.tools.FriendlyException exception) {
-    java.util.Set<Long> retried =
-        retriedItems.computeIfAbsent(guildId, key -> ConcurrentHashMap.newKeySet());
-    boolean alreadyRetried = !retried.add(failed.itemId());
+    int attempt =
+        failureAttempts
+            .computeIfAbsent(guildId, key -> new ConcurrentHashMap<>())
+            .merge(failed.itemId(), 1, Integer::sum);
     audioRecovery
-        .recover(failed, exception, alreadyRetried)
+        .recover(failed, exception, attempt)
         .thenAccept(
             recovered -> {
               if (recovered.isPresent()) {

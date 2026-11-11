@@ -76,3 +76,35 @@ All 20 exit 0 with no exception and no hang: 1-5 tracks each
 - Parser fixes from this round: split reused TSV line numbers into visual
   lines by vertical gap; drop header lines containing interface words even
   with OCR garbage around them; accept English `Dec 16, 2025` dates as noise.
+
+## v1.1 knob sweep (2026-11-10, item 20)
+
+Method: same pipeline via `OcrCli`, with review-only env overrides
+`OCR_PSM` and `OCR_BINARIZE` (production keeps PSM 6 and Otsu off).
+51 top-level prints: 6 golden, 35 clean (excluding golden and hard), 10 hard;
+`bad_prints/` excluded. Content match for the golden set compares normalized
+titles against the fixtures in `src/test/resources/parser/`.
+
+| Config | Golden match | Clean tracks | Hard tracks |
+| --- | --- | --- | --- |
+| PSM 6 (baseline) | 53/53 | 414 | 114 |
+| PSM 4 | 49/53 | 365 | 88 |
+| PSM 11 | 50/53 | 363 | 88 |
+| PSM 6 + Otsu | 50/53 | 437 | 118 |
+
+Automatic keep-or-defer rule: a candidate lands only when the golden set
+stays 53/53 and the target-set content recall strictly improves. Every
+candidate regressed the golden set, so all are deferred and the baseline is
+kept. PSM 11/Otsu raise hard-print *counts* but counts are not content
+recall; without ground truth for the hard set they cannot pass the rule.
+Cover-art masking (Phase B) was timeboxed out after no cheap candidate
+survived; recorded as deferred, not silently dropped.
+
+## Import recall gate (item 14)
+
+After slices 5 (simultaneous search) and 15 (text blend), measure
+`enqueued / detected` on clean prints. At or above 90% the current ranking
+stays; below 90% triggers duration/channel-aware ranking, official-audio
+boost and a `VERSION_PENALTY` retune. This metric needs a live
+Discord/YouTube/SoundCloud run, so the gate stays pending; no ranking change
+was applied by default.

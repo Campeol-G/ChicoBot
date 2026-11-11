@@ -140,7 +140,20 @@ public final class PlaylistConfirm extends ListenerAdapter {
       return null;
     }
     var state = member.getVoiceState();
-    return state == null ? null : state.getChannel();
+    if (state != null) {
+      return state.getChannel();
+    }
+    try {
+      var fetched =
+          event
+              .getGuild()
+              .retrieveMemberVoiceStateById(event.getUser().getId())
+              .complete();
+      return fetched == null ? null : fetched.getChannel();
+    } catch (Exception e) {
+      log.warn("Could not retrieve voice state for playlist confirm", e);
+      return null;
+    }
   }
 
   private static void deletePreview(ButtonInteractionEvent event) {
@@ -168,7 +181,9 @@ public final class PlaylistConfirm extends ListenerAdapter {
   private static List<net.dv8tion.jda.api.components.MessageTopLevelComponent> components(
       UUID sessionId, int page, boolean canPlaySingle, int itemCount) {
     List<Button> firstRow = new java.util.ArrayList<>();
-    firstRow.add(Button.primary(PLAY + sessionId, "Play playlist"));
+    firstRow.add(
+        Button.primary(PLAY + sessionId, "Play playlist")
+            .withDisabled(itemCount == 0));
     if (canPlaySingle) {
       firstRow.add(Button.secondary(SINGLE + sessionId, "Only the linked track"));
     }

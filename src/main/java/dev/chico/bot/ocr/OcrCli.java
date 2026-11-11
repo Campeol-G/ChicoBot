@@ -20,9 +20,12 @@ public final class OcrCli {
     }
     String langs = System.getenv().getOrDefault("OCR_LANGS", "por+eng");
     long timeoutMs = Long.parseLong(System.getenv().getOrDefault("OCR_TIMEOUT_MS", "8000"));
+    int psm = Integer.parseInt(System.getenv().getOrDefault("OCR_PSM", "6"));
+    boolean binarize =
+        Boolean.parseBoolean(System.getenv().getOrDefault("OCR_BINARIZE", "false"));
     byte[] raw = Files.readAllBytes(Path.of(args[0]));
-    byte[] png = new ImagePreprocessor(4096L * 4096L).preprocess(raw);
-    OcrResult ocr = new TesseractCliEngine(langs, Duration.ofMillis(timeoutMs)).read(png);
+    byte[] png = new ImagePreprocessor(4096L * 4096L, binarize).preprocess(raw);
+    OcrResult ocr = new TesseractCliEngine(langs, Duration.ofMillis(timeoutMs), psm).read(png);
     TrackLineParser parser = new DefaultTrackLineParser();
     List<ParsedTrack> tracks = parser.parse(ocr);
     for (ParsedTrack track : tracks) {

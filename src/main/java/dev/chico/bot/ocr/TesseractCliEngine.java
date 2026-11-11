@@ -19,10 +19,16 @@ public final class TesseractCliEngine implements OcrEngine {
 
   private final String ocrLangs;
   private final Duration timeout;
+  private final int psm;
 
   public TesseractCliEngine(String ocrLangs, Duration timeout) {
+    this(ocrLangs, timeout, 6);
+  }
+
+  public TesseractCliEngine(String ocrLangs, Duration timeout, int psm) {
     this.ocrLangs = ocrLangs;
     this.timeout = timeout;
+    this.psm = psm;
   }
 
   @Override
@@ -30,7 +36,7 @@ public final class TesseractCliEngine implements OcrEngine {
     Instant start = Instant.now();
     ProcessBuilder builder =
         new ProcessBuilder(
-            "tesseract", "stdin", "stdout", "-l", ocrLangs, "--psm", "6", "tsv");
+            "tesseract", "stdin", "stdout", "-l", ocrLangs, "--psm", String.valueOf(psm), "tsv");
     Map<String, String> environment = builder.environment();
     environment.put("OMP_THREAD_LIMIT", "1");
     Process process;

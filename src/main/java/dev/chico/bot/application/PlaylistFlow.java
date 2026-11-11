@@ -36,12 +36,8 @@ public final class PlaylistFlow {
     if (accepted.source() == Source.SPOTIFY) {
       return metadata
           .spotifyPlaylist(new UrlQuery(Source.SPOTIFY, accepted.uri()))
-          .thenApply(PlaylistFlow::spotifyPreview)
           .thenApply(
-              preview ->
-                  preview.error() != null
-                      ? preview
-                      : create(userId, guildId, preview.items(), accepted.singleTrack()))
+              content -> fromContent(userId, guildId, content, accepted.singleTrack()))
           .exceptionally(failure -> PlaylistPreview.error("Search failed. Try again later."));
     }
     return resolver
@@ -71,6 +67,19 @@ public final class PlaylistFlow {
 
   public void remove(UUID id) {
     sessions.remove(id);
+  }
+
+  /** Builds the preview/session from already-fetched Spotify content. */
+  public PlaylistPreview fromContent(
+      long userId,
+      long guildId,
+      SpotifyClient.Content content,
+      java.net.URI singleTrackUri) {
+    PlaylistPreview spotify = spotifyPreview(content);
+    if (spotify.error() != null) {
+      return spotify;
+    }
+    return create(userId, guildId, spotify.items(), singleTrackUri);
   }
 
   private static PlaylistPreview spotifyPreview(SpotifyClient.Content content) {

@@ -43,7 +43,7 @@ class AudioRecoveryTest {
             text -> CompletableFuture.completedFuture(List.of()));
 
     Optional<TrackCandidate> result =
-        recovery.recover(failed, failure(FriendlyException.Severity.SUSPICIOUS), false).join();
+        recovery.recover(failed, failure(FriendlyException.Severity.SUSPICIOUS), 1).join();
 
     assertTrue(result.isPresent());
     assertEquals(1, reloads.get());
@@ -63,7 +63,7 @@ class AudioRecoveryTest {
             text -> CompletableFuture.completedFuture(List.of()));
 
     assertTrue(
-        recovery.recover(failed, failure(FriendlyException.Severity.FAULT), false).join().isEmpty());
+        recovery.recover(failed, failure(FriendlyException.Severity.FAULT), 1).join().isEmpty());
     assertEquals(0, reloads.get());
   }
 
@@ -79,7 +79,7 @@ class AudioRecoveryTest {
             text -> CompletableFuture.completedFuture(List.of(youtube, soundcloud)));
 
     Optional<TrackCandidate> result =
-        recovery.recover(failed, failure(FriendlyException.Severity.COMMON), false).join();
+        recovery.recover(failed, failure(FriendlyException.Severity.COMMON), 1).join();
 
     assertTrue(result.isPresent());
     assertEquals(Source.SOUNDCLOUD, result.orElseThrow().source());
@@ -100,10 +100,36 @@ class AudioRecoveryTest {
 
     assertTrue(
         recovery
-            .recover(failed, failure(FriendlyException.Severity.COMMON), true)
+            .recover(failed, failure(FriendlyException.Severity.COMMON), 2)
             .join()
             .isEmpty());
     assertEquals(0, reloads.get());
+  }
+
+  @Test
+  void thirdFailureGivesUpWithoutMoreWork() {
+    AtomicInteger reloads = new AtomicInteger();
+    AtomicInteger searches = new AtomicInteger();
+    TrackCandidate failed = candidate(Source.YOUTUBE, "Song", "Artist");
+    AudioRecovery recovery =
+        new AudioRecovery(
+            new Ranker(0.35),
+            track -> {
+              reloads.incrementAndGet();
+              return CompletableFuture.completedFuture(null);
+            },
+            text -> {
+              searches.incrementAndGet();
+              return CompletableFuture.completedFuture(List.of());
+            });
+
+    assertTrue(
+        recovery
+            .recover(failed, failure(FriendlyException.Severity.COMMON), 3)
+            .join()
+            .isEmpty());
+    assertEquals(0, reloads.get());
+    assertEquals(0, searches.get());
   }
 
   @Test
@@ -118,7 +144,7 @@ class AudioRecoveryTest {
 
     assertFalse(
         recovery
-            .recover(failed, failure(FriendlyException.Severity.FAULT), true)
+            .recover(failed, failure(FriendlyException.Severity.FAULT), 2)
             .join()
             .isPresent());
   }

@@ -87,6 +87,7 @@ public record PlaylistSession(
     void purgeExpired() {
       Instant now = clock.instant();
       sessions.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().expiresAt()));
+      active.values().removeIf(id -> !sessions.containsKey(id));
     }
 
     private static String activeKey(long userId, long guildId) {
