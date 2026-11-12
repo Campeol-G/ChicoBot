@@ -1,4 +1,0 @@
-oq funciona:
-- o play esta quase 100% funcional, se eu fizer a busca com qualquer nome da certo, se eu fizer com o link do youtube da certo, porem, nao consegui fazer os links do sc funcionar, e nao cheguei nem a testar com os do apple music.
-- /skip funciona 100%
-- a segunda conta consegue fazer todos os comandos do bot
