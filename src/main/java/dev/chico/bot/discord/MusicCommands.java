@@ -142,8 +142,14 @@ public final class MusicCommands extends ListenerAdapter {
                 return;
               }
               if (result.queued()) {
-                event.getHook().sendMessageEmbeds(Embeds.nowPlaying(result.candidate())).queue(
-                    null, err -> log.warn("play reply failed", err));
+                var embed = Embeds.nowPlaying(result.candidate());
+                if (result.message().isBlank()) {
+                  event.getHook().sendMessageEmbeds(embed).queue(
+                      null, err -> log.warn("play reply failed", err));
+                } else {
+                  event.getHook().sendMessage(result.message()).setEmbeds(embed).queue(
+                      null, err -> log.warn("play reply failed", err));
+                }
               } else {
                 event.getHook().sendMessageEmbeds(Embeds.error(result.message())).queue(
                     null, err -> log.warn("play reply failed", err));

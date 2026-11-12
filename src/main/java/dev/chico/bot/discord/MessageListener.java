@@ -94,11 +94,21 @@ public final class MessageListener extends ListenerAdapter {
                     .setAllowedMentions(Collections.emptyList())
                     .queue(null, err -> log.warn("play reply failed", err));
               } else if (result.queued()) {
-                event
-                    .getMessage()
-                    .replyEmbeds(Embeds.nowPlaying(result.candidate()))
-                    .setAllowedMentions(Collections.emptyList())
-                    .queue(null, err -> log.warn("play reply failed", err));
+                var embed = Embeds.nowPlaying(result.candidate());
+                if (result.message().isBlank()) {
+                  event
+                      .getMessage()
+                      .replyEmbeds(embed)
+                      .setAllowedMentions(Collections.emptyList())
+                      .queue(null, err -> log.warn("play reply failed", err));
+                } else {
+                  event
+                      .getMessage()
+                      .reply(result.message())
+                      .setEmbeds(embed)
+                      .setAllowedMentions(Collections.emptyList())
+                      .queue(null, err -> log.warn("play reply failed", err));
+                }
               } else {
                 event
                     .getMessage()

@@ -15,7 +15,6 @@ import dev.chico.bot.source.PatchedTvClient;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Ranker;
 import dev.chico.bot.source.Source;
-import dev.chico.bot.source.SpotifyClient;
 import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackLoader;
@@ -46,6 +45,14 @@ public final class PlaybackService {
 
   private static final int MAX_SEARCH_RESULTS = 10;
   private static final URI ITUNES_LOOKUP = URI.create("https://itunes.apple.com/lookup");
+  private static final String SPOTIFY_NOTICE =
+      "Spotify is only partially supported (no Premium API account), so the search uses the"
+          + " title only and may pick a different version.";
+  private static final String SPOTIFY_COLLECTION_REFUSAL =
+      "Spotify playlists need a Premium API account, so this bot can't read them. Send the"
+          + " song name or a YouTube link.";
+  private static final String UNREADABLE_LINK =
+      "Could not read that link. Send the track name instead.";
 
   private static final Logger log = LoggerFactory.getLogger(PlaybackService.class);
   private static final java.util.concurrent.ExecutorService RESOLVE_EXECUTOR =
@@ -123,14 +130,7 @@ public final class PlaybackService {
                 clock),
             resolveTimeout,
             config.parallelSearch());
-    SpotifyClient spotify =
-        config.spotifyClientId().isPresent()
-            ? new SpotifyClient(
-                config.spotifyClientId().orElseThrow(),
-                config.spotifyClientSecret().orElseThrow(),
-                resolveTimeout)
-            : null;
-    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify);
+    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
@@ -146,6 +146,21 @@ public final class PlaybackService {
 
   PlaybackService(
       VoiceConnector connector, Config config, Clock clock, TrackResolver resolver) {
+    this(
+        connector,
+        config,
+        clock,
+        resolver,
+        new MetadataLookup(
+            ITUNES_LOOKUP, Duration.ofMillis(config.resolveTimeoutMs())));
+  }
+
+  PlaybackService(
+      VoiceConnector connector,
+      Config config,
+      Clock clock,
+      TrackResolver resolver,
+      MetadataLookup metadata) {
     this.connector = connector;
     this.clock = clock;
     this.queueMax = config.queueMax();
@@ -153,8 +168,7 @@ public final class PlaybackService {
     this.resolveConcurrency = config.resolveConcurrency();
     this.resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
     this.resolver = resolver;
-    this.metadata =
-        new MetadataLookup(ITUNES_LOOKUP, Duration.ofMillis(config.resolveTimeoutMs()));
+    this.metadata = metadata;
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
@@ -355,8 +369,8 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
-    if (accepted.source() == Source.SPOTIFY && !metadata.spotifyEnabled()) {
-      return CompletableFuture.completedFuture(refused("Spotify links are not supported yet."));
+    if (accepted.source() == Source.SPOTIFY) {
+      return playSpotify(guildId, voiceChannelId, userId, accepted);
     }
     if (accepted.playlist()) {
       return playlistFlow
@@ -366,45 +380,6 @@ public final class PlaybackService {
                   preview.sessionId() == null
                       ? refused(preview.error())
                       : new PlayResult(false, "", null, preview));
-    }
-    if (accepted.source() == Source.SPOTIFY) {
-      // Track links and spotify.link shorts: the content type is only known
-      // after resolving, so playlists can still reach the confirm preview.
-      UrlQuery spotifyQuery = new UrlQuery(Source.SPOTIFY, accepted.uri());
-      return metadata
-          .spotifyContent(spotifyQuery)
-          .thenCompose(
-              content -> {
-                if (content.transientError()) {
-                  return CompletableFuture.completedFuture(
-                      refused("Search failed. Try again later."));
-                }
-                if (content.kind() == dev.chico.bot.source.SpotifyClient.Kind.PLAYLIST
-                    || content.unavailable()) {
-                  PlaylistPreview preview =
-                      playlistFlow.fromContent(
-                          userId, guildId, content, accepted.singleTrack());
-                  return CompletableFuture.completedFuture(
-                      preview.sessionId() == null
-                          ? refused(preview.error())
-                          : new PlayResult(false, "", null, preview));
-                }
-                if (content.kind() == dev.chico.bot.source.SpotifyClient.Kind.TRACK
-                    && !content.tracks().isEmpty()) {
-                  return playQuery(
-                      guildId,
-                      voiceChannelId,
-                      userId,
-                      new TextQuery(content.tracks().get(0)));
-                }
-                return CompletableFuture.completedFuture(
-                    refused("Could not read that link. Send the track name instead."));
-              })
-          .exceptionally(
-              failure -> {
-                log.warn("Spotify resolve failed", failure);
-                return refused("Could not read that link. Send the track name instead.");
-              });
     }
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
@@ -427,8 +402,37 @@ public final class PlaybackService {
                         found -> playQuery(guildId, voiceChannelId, userId, new TextQuery(found)))
                     .orElseGet(
                         () ->
-                            CompletableFuture.completedFuture(
-                                refused("Could not read that link. Send the track name instead."))));
+                            CompletableFuture.completedFuture(refused(UNREADABLE_LINK))));
+  }
+
+  private CompletableFuture<PlayResult> playSpotify(
+      long guildId, long voiceChannelId, long userId, UrlDecision.Accepted accepted) {
+    return metadata
+        .spotifyTitle(accepted.uri())
+        .thenCompose(
+            found ->
+                switch (found.kind()) {
+                  case FOUND ->
+                      playQuery(guildId, voiceChannelId, userId, new TextQuery(found.title()))
+                          .thenApply(
+                              played ->
+                                  played.queued()
+                                      ? new PlayResult(
+                                          true,
+                                          SPOTIFY_NOTICE,
+                                          played.candidate(),
+                                          played.playlist())
+                                      : played);
+                  case NOT_A_TRACK ->
+                      CompletableFuture.completedFuture(refused(SPOTIFY_COLLECTION_REFUSAL));
+                  case FAILED ->
+                      CompletableFuture.completedFuture(refused(UNREADABLE_LINK));
+                })
+        .exceptionally(
+            failure -> {
+              log.warn("Spotify oEmbed failed", failure);
+              return refused(UNREADABLE_LINK);
+            });
   }
 
   public String pause(long guildId) {

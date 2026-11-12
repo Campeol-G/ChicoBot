@@ -16,13 +16,18 @@ import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.LocalAudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame;
+import com.sun.net.httpserver.HttpServer;
 import dev.chico.bot.config.Config;
+import dev.chico.bot.source.MetadataLookup;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Source;
+import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackResolver;
 import dev.chico.bot.source.UrlQuery;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class PlaybackServiceTest {
@@ -77,6 +83,23 @@ class PlaybackServiceTest {
 
     @Override
     public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
+      return CompletableFuture.completedFuture(candidates);
+    }
+  }
+
+  static final class RecordingResolver implements TrackResolver {
+    private final List<TrackCandidate> candidates;
+    final AtomicReference<String> lastText = new AtomicReference<>();
+
+    RecordingResolver(List<TrackCandidate> candidates) {
+      this.candidates = candidates;
+    }
+
+    @Override
+    public CompletableFuture<List<TrackCandidate>> resolve(PlayQuery query) {
+      if (query instanceof TextQuery text) {
+        lastText.set(text.text());
+      }
       return CompletableFuture.completedFuture(candidates);
     }
   }
@@ -281,14 +304,91 @@ class PlaybackServiceTest {
   }
 
   @Test
-  void playSpotifyLinkReportsSpotifyUnsupported() {
+  void spotifyPlaylistLinkIsRefusedWithoutPremiumCredentials() {
     PlaybackService.PlayResult result =
         service()
-            .play(1L, 2L, 3L, "https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQm")
+            .play(1L, 2L, 3L, "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
             .join();
 
     assertFalse(result.queued());
-    assertTrue(result.message().contains("Spotify"));
+    assertTrue(result.message().contains("Premium"));
+  }
+
+  @Test
+  void spotifyTrackUsesOembedTitleAndShowsPartialSupport() throws Exception {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/oembed", exchange -> {
+      byte[] body = "{\"title\":\"Never Gonna Give You Up\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+    try {
+      MetadataLookup metadata =
+          new MetadataLookup(
+              URI.create("https://example.invalid"),
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/oembed"),
+              Duration.ofSeconds(5));
+      RecordingResolver resolver =
+          new RecordingResolver(List.of(candidate("Never Gonna Give You Up")));
+      PlaybackService service =
+          new PlaybackService(
+              new SilentVoice(),
+              new Config(Map.of("DISCORD_TOKEN", "test")),
+              Clock.systemUTC(),
+              resolver,
+              metadata);
+
+      PlaybackService.PlayResult result =
+          service
+              .play(1L, 2L, 3L, "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8")
+              .join();
+
+      assertTrue(result.queued());
+      assertTrue(result.message().contains("partially supported"));
+      assertEquals("Never Gonna Give You Up", resolver.lastText.get());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void spotifyTrackWithNoSearchResultsKeepsNothingFound() throws Exception {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/oembed", exchange -> {
+      byte[] body = "{\"title\":\"Never Gonna Give You Up\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+    try {
+      MetadataLookup metadata =
+          new MetadataLookup(
+              URI.create("https://example.invalid"),
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/oembed"),
+              Duration.ofSeconds(5));
+      PlaybackService service =
+          new PlaybackService(
+              new SilentVoice(),
+              new Config(Map.of("DISCORD_TOKEN", "test")),
+              Clock.systemUTC(),
+              new EmptyResolver(),
+              metadata);
+
+      PlaybackService.PlayResult result =
+          service
+              .play(1L, 2L, 3L, "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8")
+              .join();
+
+      assertFalse(result.queued());
+      assertEquals("Nothing found. Try another name or link.", result.message());
+    } finally {
+      server.stop(0);
+    }
   }
 
   @Test
