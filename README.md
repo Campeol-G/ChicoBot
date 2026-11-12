@@ -23,14 +23,14 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
 - Message command **Play music from image** for screenshots in older messages.
 - Automatic fallback between YouTube and SoundCloud; per-source circuit
   breaker so a YouTube outage does not stall a 25-track import.
-- Links to Apple Music and Spotify tracks are accepted as metadata: the bot
-  reads the title and artist and searches YouTube / SoundCloud. Spotify uses
-  a free Web API app (`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`; empty
-  disables Spotify links).
-- Playlist links (YouTube `list=`, SoundCloud sets, Spotify playlists) show a
-  paginated confirmation before enqueueing. Confirmed playlists are the only
-  path allowed past `QUEUE_MAX`; private or unavailable playlists get their
-  own error.
+- Links to Apple Music tracks and Spotify tracks are accepted: Apple Music
+  reads title and artist; Spotify reads only the title through the public
+  oEmbed endpoint (no Premium API account), so its YouTube/SoundCloud match
+  is weaker and the bot says so in the reply. Spotify playlists are refused.
+- Playlist links (YouTube `list=`, SoundCloud sets) show a paginated
+  confirmation before enqueueing. Confirmed playlists are the only path
+  allowed past `QUEUE_MAX`; private or unavailable playlists get their own
+  error.
 - Skipping/removing someone else's track in a call with 3+ humans needs a
   majority vote (`Skipped 1/2.`); your own track is always immediate. `/stop`
   and `/leave` stay free for anyone.
@@ -122,8 +122,6 @@ Only `DISCORD_TOKEN` is required.
 | `PLAY_COOLDOWN_S` | `5` | Cooldown on `/play` per user. |
 | `LOG_LEVEL` | `INFO` | Log level. |
 | `YT_REFRESH_TOKEN` | empty | Optional burner-account OAuth (below). |
-| `SPOTIFY_CLIENT_ID` | empty | Spotify Web API app id. Set both Spotify values or neither (both empty disables Spotify links). |
-| `SPOTIFY_CLIENT_SECRET` | empty | Spotify Web API secret; keep it in the env file (mode 600), never in git. |
 | `YT_CIPHER_URL` | empty | Remote cipher URL (below). Empty = local cipher. |
 | `YT_CIPHER_PASSWORD` | empty | Remote cipher password. |
 
