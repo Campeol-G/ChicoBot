@@ -2,11 +2,14 @@ package dev.chico.bot.source;
 
 import com.sedmelluq.discord.lavaplayer.tools.JsonBrowser;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -16,31 +19,162 @@ import java.util.concurrent.CompletableFuture;
  */
 public final class MetadataLookup {
 
+  private static final URI SPOTIFY_OEMBED = URI.create("https://open.spotify.com/oembed");
+
   private final HttpClient http;
+  private final HttpClient spotifyHttp;
   private final URI itunesLookup;
+  private final URI spotifyOembed;
   private final Duration timeout;
   private final SpotifyClient spotify;
 
   public MetadataLookup(URI itunesLookup, Duration timeout) {
-    this(HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
-        itunesLookup, timeout, null);
+    this(itunesLookup, SPOTIFY_OEMBED, timeout);
+  }
+
+  public MetadataLookup(URI itunesLookup, URI spotifyOembed, Duration timeout) {
+    this(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        itunesLookup,
+        spotifyOembed,
+        timeout,
+        null);
   }
 
   public MetadataLookup(URI itunesLookup, Duration timeout, SpotifyClient spotify) {
-    this(HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
-        itunesLookup, timeout, spotify);
+    this(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        itunesLookup,
+        SPOTIFY_OEMBED,
+        timeout,
+        spotify);
   }
 
   MetadataLookup(HttpClient http, URI itunesLookup, Duration timeout) {
-    this(http, itunesLookup, timeout, null);
+    this(
+        http,
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        itunesLookup,
+        SPOTIFY_OEMBED,
+        timeout,
+        null);
   }
 
   MetadataLookup(
-      HttpClient http, URI itunesLookup, Duration timeout, SpotifyClient spotify) {
+      HttpClient http,
+      HttpClient spotifyHttp,
+      URI itunesLookup,
+      URI spotifyOembed,
+      Duration timeout,
+      SpotifyClient spotify) {
     this.http = http;
+    this.spotifyHttp = spotifyHttp;
     this.itunesLookup = itunesLookup;
+    this.spotifyOembed = spotifyOembed;
     this.timeout = timeout;
     this.spotify = spotify;
+  }
+
+  /** Result of a Spotify link lookup: a title, a non-track collection, or a failure. */
+  public record SpotifyTitle(Kind kind, String title) {
+    public enum Kind {
+      FOUND,
+      NOT_A_TRACK,
+      FAILED
+    }
+
+    static SpotifyTitle found(String title) {
+      return new SpotifyTitle(Kind.FOUND, title);
+    }
+
+    static SpotifyTitle notATrack() {
+      return new SpotifyTitle(Kind.NOT_A_TRACK, null);
+    }
+
+    static SpotifyTitle failed() {
+      return new SpotifyTitle(Kind.FAILED, null);
+    }
+  }
+
+  /** Resolves a Spotify track link (or spotify.link short link) to its oEmbed title. */
+  public CompletableFuture<SpotifyTitle> spotifyTitle(URI uri) {
+    String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+    if (host.equals("spotify.link")) {
+      return followShortLink(uri);
+    }
+    if (!host.equals("open.spotify.com")) {
+      return CompletableFuture.completedFuture(SpotifyTitle.failed());
+    }
+    return resolveTrack(uri);
+  }
+
+  CompletableFuture<SpotifyTitle> followShortLink(URI uri) {
+    HttpRequest request = HttpRequest.newBuilder(uri).timeout(timeout).GET().build();
+    return spotifyHttp
+        .sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        .thenCompose(
+            response -> {
+              if (response.statusCode() < 300 || response.statusCode() >= 400) {
+                return CompletableFuture.completedFuture(SpotifyTitle.failed());
+              }
+              String location = response.headers().firstValue("Location").orElse("");
+              if (location.isBlank()) {
+                return CompletableFuture.completedFuture(SpotifyTitle.failed());
+              }
+              URI target = uri.resolve(location);
+              if (target.getScheme() == null
+                  || !target.getScheme().equalsIgnoreCase("https")
+                  || target.getHost() == null
+                  || !target.getHost().equalsIgnoreCase("open.spotify.com")) {
+                // POR QUE: only spotify.link -> open.spotify.com is allowed;
+                // never fetch an arbitrary redirect target.
+                return CompletableFuture.completedFuture(SpotifyTitle.failed());
+              }
+              return resolveTrack(target);
+            })
+        .exceptionally(failure -> SpotifyTitle.failed());
+  }
+
+  private CompletableFuture<SpotifyTitle> resolveTrack(URI uri) {
+    String path = uri.getPath() == null ? "" : uri.getPath();
+    List<String> segments =
+        List.of(path.split("/")).stream().filter(s -> !s.isEmpty()).toList();
+    if (segments.size() >= 2
+        && segments.get(0).toLowerCase(Locale.ROOT).startsWith("intl-")) {
+      segments = segments.subList(1, segments.size());
+    }
+    if (segments.size() < 2) {
+      return CompletableFuture.completedFuture(SpotifyTitle.failed());
+    }
+    if (!segments.get(0).equals("track")) {
+      return CompletableFuture.completedFuture(SpotifyTitle.notATrack());
+    }
+    String canonical = "https://open.spotify.com/track/" + segments.get(1);
+    URI oembed =
+        URI.create(
+            spotifyOembed
+                + "?url="
+                + URLEncoder.encode(canonical, StandardCharsets.UTF_8));
+    HttpRequest request = HttpRequest.newBuilder(oembed).timeout(timeout).GET().build();
+    return spotifyHttp
+        .sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        .thenApply(
+            response -> {
+              if (response.statusCode() != 200) {
+                return SpotifyTitle.failed();
+              }
+              try {
+                String title = JsonBrowser.parse(response.body()).get("title").text();
+                return title == null || title.isBlank()
+                    ? SpotifyTitle.failed()
+                    : SpotifyTitle.found(title.strip());
+              } catch (Exception e) {
+                return SpotifyTitle.failed();
+              }
+            })
+        .exceptionally(failure -> SpotifyTitle.failed());
   }
 
   public boolean spotifyEnabled() {
