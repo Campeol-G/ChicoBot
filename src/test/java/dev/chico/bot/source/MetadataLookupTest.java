@@ -1,6 +1,7 @@
 package dev.chico.bot.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
@@ -65,13 +66,16 @@ class MetadataLookupTest {
       int status;
       if (query != null && query.contains("broken")) {
         status = 500;
-        body = "{}";
+        body = "{\"title\":\"Never Gonna Give You Up\"}";
       } else if (query != null && query.contains("missing")) {
         status = 200;
         body = "{}";
       } else if (query != null && query.contains("blank")) {
         status = 200;
         body = "{\"title\":\"   \"}";
+      } else if (query != null && query.contains("html")) {
+        status = 200;
+        body = "<html>not json</html>";
       } else {
         status = 200;
         body = "{\"title\":\"Never Gonna Give You Up\"}";
@@ -97,7 +101,14 @@ class MetadataLookupTest {
       exchange.close();
     });
     server.createContext("/short-evil", exchange -> {
-      exchange.getResponseHeaders().set("Location", "https://example.com/x");
+      exchange.getResponseHeaders().set("Location", "https://example.com/track/x");
+      exchange.sendResponseHeaders(302, -1);
+      exchange.close();
+    });
+    server.createContext("/short-http", exchange -> {
+      exchange
+          .getResponseHeaders()
+          .set("Location", "http://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8");
       exchange.sendResponseHeaders(302, -1);
       exchange.close();
     });
@@ -231,11 +242,21 @@ class MetadataLookupTest {
         spotifyLookup.followShortLink(URI.create(baseUrl + "/short-evil")).get();
 
     assertEquals(MetadataLookup.SpotifyTitle.Kind.FAILED, result.kind());
+    assertNull(lastOembedQuery.get());
+  }
+
+  @Test
+  void spotifyShortLinkToHttpIsFailed() throws Exception {
+    MetadataLookup.SpotifyTitle result =
+        spotifyLookup.followShortLink(URI.create(baseUrl + "/short-http")).get();
+
+    assertEquals(MetadataLookup.SpotifyTitle.Kind.FAILED, result.kind());
+    assertNull(lastOembedQuery.get());
   }
 
   @Test
   void spotifyOembedBadPayloadIsFailed() throws Exception {
-    for (String id : List.of("broken", "missing", "blank")) {
+    for (String id : List.of("broken", "missing", "blank", "html")) {
       MetadataLookup.SpotifyTitle result =
           spotifyLookup
               .spotifyTitle(URI.create("https://open.spotify.com/track/" + id))

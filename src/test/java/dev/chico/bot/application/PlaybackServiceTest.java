@@ -2,6 +2,7 @@ package dev.chico.bot.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
@@ -389,6 +390,58 @@ class PlaybackServiceTest {
     } finally {
       server.stop(0);
     }
+  }
+
+  @Test
+  void spotifyOembedFailureRepliesUnreadableLink() throws Exception {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/oembed", exchange -> {
+      byte[] body = "{\"title\":\"Never Gonna Give You Up\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(500, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+    try {
+      MetadataLookup metadata =
+          new MetadataLookup(
+              URI.create("https://example.invalid"),
+              URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/oembed"),
+              Duration.ofSeconds(5));
+      RecordingResolver resolver =
+          new RecordingResolver(List.of(candidate("Never Gonna Give You Up")));
+      PlaybackService service =
+          new PlaybackService(
+              new SilentVoice(),
+              new Config(Map.of("DISCORD_TOKEN", "test")),
+              Clock.systemUTC(),
+              resolver,
+              metadata);
+
+      PlaybackService.PlayResult result =
+          service
+              .play(1L, 2L, 3L, "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8")
+              .join();
+
+      assertFalse(result.queued());
+      assertEquals("Could not read that link. Send the track name instead.", result.message());
+      assertNull(resolver.lastText.get());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void spotifyEpisodeLinkIsRefusedWithTrackHint() {
+    PlaybackService.PlayResult result =
+        service()
+            .play(1L, 2L, 3L, "https://open.spotify.com/episode/4uLU6hMCjMI75M1A2tKUQm")
+            .join();
+
+    assertFalse(result.queued());
+    assertTrue(result.message().contains("episodes"));
+    assertTrue(result.message().contains("song name"));
   }
 
   @Test

@@ -49,8 +49,8 @@ public final class PlaybackService {
       "Spotify is only partially supported (no Premium API account), so the search uses the"
           + " title only and may pick a different version.";
   private static final String SPOTIFY_COLLECTION_REFUSAL =
-      "Spotify playlists need a Premium API account, so this bot can't read them. Send the"
-          + " song name or a YouTube link.";
+      "Spotify playlists and other collections need a Premium API account, so this bot can't"
+          + " read them. Send the song name or a YouTube link.";
   private static final String UNREADABLE_LINK =
       "Could not read that link. Send the track name instead.";
 
@@ -866,7 +866,7 @@ public final class PlaybackService {
     return switch (reason) {
       case PLAYLIST ->
           "That collection link is not supported. Send a single track or a supported playlist.";
-      case SPOTIFY -> "Spotify episodes are not supported. Send a track or playlist link.";
+      case SPOTIFY -> "Spotify episodes are not supported. Send a track link or the song name.";
       case NOT_HTTPS -> "Links must use HTTPS.";
       case UNKNOWN_HOST -> "That link is not from a supported source.";
       case UNSUPPORTED_LINK -> "That link is not supported.";
