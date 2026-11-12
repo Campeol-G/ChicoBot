@@ -32,16 +32,6 @@ public final class Config {
     return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
   }
 
-  public Optional<String> spotifyClientId() {
-    String raw = env.getOrDefault("SPOTIFY_CLIENT_ID", "").strip();
-    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-  }
-
-  public Optional<String> spotifyClientSecret() {
-    String raw = env.getOrDefault("SPOTIFY_CLIENT_SECRET", "").strip();
-    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-  }
-
   public String ytCipherPassword() {
     return env.getOrDefault("YT_CIPHER_PASSWORD", "");
   }
@@ -176,10 +166,6 @@ public final class Config {
     if (ytCipherUrl().isPresent() && ytCipherPassword().isBlank()) {
       throw new IllegalArgumentException(
           "bad config YT_CIPHER_PASSWORD: required when YT_CIPHER_URL is set");
-    }
-    if (spotifyClientId().isPresent() != spotifyClientSecret().isPresent()) {
-      throw new IllegalArgumentException(
-          "bad config SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET: set both or neither");
     }
   }
 

@@ -134,7 +134,6 @@ public final class PlaybackService {
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
-            metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
     this.audioRecovery =
@@ -172,7 +171,6 @@ public final class PlaybackService {
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
-            metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
     this.loaders = Map.of();

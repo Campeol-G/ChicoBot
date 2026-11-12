@@ -15,7 +15,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Reads track metadata from links that carry no audio. Apple Music uses the
- * public iTunes lookup; Spotify uses the Web API when credentials are set.
+ * public iTunes lookup; Spotify uses the public oEmbed endpoint (title only).
  */
 public final class MetadataLookup {
 
@@ -26,7 +26,6 @@ public final class MetadataLookup {
   private final URI itunesLookup;
   private final URI spotifyOembed;
   private final Duration timeout;
-  private final SpotifyClient spotify;
 
   public MetadataLookup(URI itunesLookup, Duration timeout) {
     this(itunesLookup, SPOTIFY_OEMBED, timeout);
@@ -38,28 +37,7 @@ public final class MetadataLookup {
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
         itunesLookup,
         spotifyOembed,
-        timeout,
-        null);
-  }
-
-  public MetadataLookup(URI itunesLookup, Duration timeout, SpotifyClient spotify) {
-    this(
-        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
-        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
-        itunesLookup,
-        SPOTIFY_OEMBED,
-        timeout,
-        spotify);
-  }
-
-  MetadataLookup(HttpClient http, URI itunesLookup, Duration timeout) {
-    this(
-        http,
-        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
-        itunesLookup,
-        SPOTIFY_OEMBED,
-        timeout,
-        null);
+        timeout);
   }
 
   MetadataLookup(
@@ -67,14 +45,12 @@ public final class MetadataLookup {
       HttpClient spotifyHttp,
       URI itunesLookup,
       URI spotifyOembed,
-      Duration timeout,
-      SpotifyClient spotify) {
+      Duration timeout) {
     this.http = http;
     this.spotifyHttp = spotifyHttp;
     this.itunesLookup = itunesLookup;
     this.spotifyOembed = spotifyOembed;
     this.timeout = timeout;
-    this.spotify = spotify;
   }
 
   /** Result of a Spotify link lookup: a title, a non-track collection, or a failure. */
@@ -177,40 +153,8 @@ public final class MetadataLookup {
         .exceptionally(failure -> SpotifyTitle.failed());
   }
 
-  public boolean spotifyEnabled() {
-    return spotify != null;
-  }
-
-  /** Playlist metadata for the confirm preview (Spotify only). */
-  public CompletableFuture<SpotifyClient.Content> spotifyPlaylist(UrlQuery query) {
-    if (spotify == null || query.source() != Source.SPOTIFY) {
-      return CompletableFuture.completedFuture(SpotifyClient.Content.unsupported());
-    }
-    return spotify.resolve(query.uri());
-  }
-
-  /** Raw Spotify content (track, playlist or unsupported) for play routing. */
-  public CompletableFuture<SpotifyClient.Content> spotifyContent(UrlQuery query) {
-    if (spotify == null || query.source() != Source.SPOTIFY) {
-      return CompletableFuture.completedFuture(SpotifyClient.Content.unsupported());
-    }
-    return spotify.resolve(query.uri());
-  }
-
   /** Resolves a metadata-only link to "artist - title" for text search. */
   public CompletableFuture<Optional<String>> artistTitle(UrlQuery query) {
-    if (query.source() == Source.SPOTIFY) {
-      if (spotify == null) {
-        return CompletableFuture.completedFuture(Optional.empty());
-      }
-      return spotify
-          .resolve(query.uri())
-          .thenApply(
-              content ->
-                  content.kind() == SpotifyClient.Kind.TRACK && !content.tracks().isEmpty()
-                      ? Optional.of(content.tracks().get(0))
-                      : Optional.empty());
-    }
     if (query.source() != Source.APPLE_MUSIC) {
       return CompletableFuture.completedFuture(Optional.empty());
     }
