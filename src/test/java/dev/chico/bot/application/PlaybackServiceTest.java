@@ -594,6 +594,25 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void unloopClearsAnyActiveLoop() {
+    PlaybackService service = service();
+    service.enqueueResolved(1L, List.of(candidate("Alpha"), candidate("Beta")));
+
+    assertEquals("No loop is active.", service.unloop(1L));
+    assertEquals("Looping current track.", service.loop(1L, Optional.empty()));
+    assertEquals("Loop disabled.", service.unloop(1L));
+    assertEquals(
+        dev.chico.bot.audio.TrackScheduler.LoopMode.OFF, service.loopView(1L).mode());
+
+    assertEquals("Looping queue (2 tracks).", service.loop(1L, Optional.of("all")));
+    assertEquals("Loop disabled.", service.unloop(1L));
+    assertEquals(
+        dev.chico.bot.audio.TrackScheduler.LoopMode.OFF, service.loopView(1L).mode());
+
+    assertEquals("No loop is active.", service.unloop(99L));
+  }
+
+  @Test
   void playlistLinksShowPreviewInsteadOfLoadingOneTrack() {
     PlaybackService.PlayResult youtube =
         service()

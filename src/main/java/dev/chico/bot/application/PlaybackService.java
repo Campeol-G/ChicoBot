@@ -515,6 +515,18 @@ public final class PlaybackService {
         : music.scheduler().loopView();
   }
 
+  public String unloop(long guildId) {
+    GuildMusicManager music = managers.get(guildId);
+    if (music == null
+        || music.scheduler().loopView().mode()
+            == dev.chico.bot.audio.TrackScheduler.LoopMode.OFF) {
+      return "No loop is active.";
+    }
+    music.scheduler().clearLoop();
+    notifyChanged(guildId);
+    return "Loop disabled.";
+  }
+
   public String stop(long guildId) {
     GuildMusicManager music = managers.get(guildId);
     if (music == null || music.player().getPlayingTrack() == null) {
