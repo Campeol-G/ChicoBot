@@ -26,3 +26,11 @@ docs/superpowers/
 
 # Session transcripts (process docs)
 session-*.md
+
+# Personal notes and draft specs (never pushed)
+ideia.md
+text.txt
+
+# Operational notes (internal calibration; never pushed)
+docs/ocr-evaluation.md
+docs/v1.1-suggestions.md
