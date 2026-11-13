@@ -12,7 +12,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -30,10 +29,6 @@ public final class AppleMusicClient {
 
     public Content(List<Track> tracks, boolean unavailable, boolean transientError) {
       this(tracks, unavailable, transientError, null);
-    }
-
-    static Content empty() {
-      return new Content(List.of(), false, false);
     }
 
     static Content unavailablePlaylist() {
@@ -67,6 +62,22 @@ public final class AppleMusicClient {
     this(
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
         URI.create("https://api.music.apple.com"),
+        developerToken,
+        storefront,
+        userToken,
+        timeout);
+  }
+
+  /** Custom endpoint factory for proxies and local-server tests. */
+  public static AppleMusicClient forEndpoint(
+      String developerToken,
+      String storefront,
+      Optional<String> userToken,
+      Duration timeout,
+      URI apiBase) {
+    return new AppleMusicClient(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        apiBase,
         developerToken,
         storefront,
         userToken,
@@ -134,7 +145,9 @@ public final class AppleMusicClient {
               }
               if (result.status() == 401 || result.status() == 403) {
                 return CompletableFuture.completedFuture(
-                    Content.error("Apple Music credentials were rejected. Check the developer token."));
+                    Content.error(
+                        "Apple Music credentials were rejected. Check the developer and Music"
+                            + " User tokens."));
               }
               if (result.status() != 200) {
                 return CompletableFuture.completedFuture(Content.transientFailure());
@@ -242,7 +255,7 @@ public final class AppleMusicClient {
     }
   }
 
-  private static Optional<Ref> parse(URI uri) {
+  private Optional<Ref> parse(URI uri) {
     String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);
     if (!host.equals("music.apple.com") && !host.equals("www.music.apple.com")) {
       return Optional.empty();
@@ -253,16 +266,19 @@ public final class AppleMusicClient {
     if (playlist < 0 || playlist + 1 >= segments.size()) {
       return Optional.empty();
     }
-    boolean library = playlist > 0 && segments.get(playlist - 1).equals("library");
     String id = segments.get(segments.size() - 1);
+    if (!id.matches("[A-Za-z0-9._-]{1,128}")) {
+      return Optional.empty();
+    }
+    boolean library = playlist > 0 && segments.get(playlist - 1).equals("library");
     if (library) {
       return Optional.of(new Ref(true, "", id));
     }
-    String storefront = "us";
+    String selected = storefront;
     if (playlist > 0 && segments.get(playlist - 1).matches("[a-z]{2}")) {
-      storefront = segments.get(playlist - 1);
+      selected = segments.get(playlist - 1);
     }
-    return Optional.of(new Ref(false, storefront, id));
+    return Optional.of(new Ref(false, selected, id));
   }
 
   private record Ref(boolean library, String storefront, String id) {

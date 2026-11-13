@@ -124,6 +124,25 @@ public final class SpotifyClient {
         URI.create("https://api.spotify.com/v1"));
   }
 
+  /** Custom endpoint factory for proxies and local-server tests. */
+  public static SpotifyClient forEndpoint(
+      String clientId,
+      String clientSecret,
+      Optional<String> refreshToken,
+      Duration timeout,
+      URI tokenUri,
+      URI apiBase) {
+    return new SpotifyClient(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        Clock.systemUTC(),
+        timeout,
+        clientId,
+        clientSecret,
+        refreshToken,
+        tokenUri,
+        apiBase);
+  }
+
   SpotifyClient(
       HttpClient http,
       Clock clock,
@@ -167,10 +186,6 @@ public final class SpotifyClient {
     return userModeEnabled;
   }
 
-  public boolean userConfigured() {
-    return currentRefreshToken != null;
-  }
-
   /**
    * Refreshes the user token and validates it with /v1/me. Spotify removed the
    * product field in 2026, so any valid user token enables user mode.
@@ -190,8 +205,11 @@ public final class SpotifyClient {
                   userModeEnabled = false;
                 }
                 invalidateToken();
-                return new SpotifyStatus(
-                    true, userModeEnabled, null, "Spotify profile status " + result.status());
+                String message =
+                    definitive
+                        ? "Spotify login was rejected; run the Spotify login setup again."
+                        : "Spotify profile status " + result.status();
+                return new SpotifyStatus(true, userModeEnabled, null, message);
               }
               String displayName = result.body().get("display_name").text();
               userModeEnabled = true;
@@ -199,12 +217,18 @@ public final class SpotifyClient {
             })
         .exceptionally(
             failure -> {
-              if (isDefinitive(failure)) {
+              boolean definitive = isDefinitive(failure);
+              if (definitive) {
                 userModeEnabled = false;
               }
               invalidateToken();
               return new SpotifyStatus(
-                  true, userModeEnabled, null, "Spotify status temporarily unavailable");
+                  true,
+                  userModeEnabled,
+                  null,
+                  definitive
+                      ? "Spotify login was rejected; run the Spotify login setup again."
+                      : "Spotify status temporarily unavailable");
             });
   }
 

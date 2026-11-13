@@ -17,15 +17,19 @@ import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.LocalAudioTrackExecutor;
 import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame;
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.chico.bot.config.Config;
+import dev.chico.bot.source.AppleMusicClient;
 import dev.chico.bot.source.MetadataLookup;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Source;
+import dev.chico.bot.source.SpotifyClient;
 import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackResolver;
 import dev.chico.bot.source.UrlQuery;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +37,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -433,6 +438,83 @@ class PlaybackServiceTest {
       assertFalse(result.queued());
       assertEquals("Could not read that link. Send the track name instead.", result.message());
       assertNull(resolver.lastText.get());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void spotifyAndAppleApiPathsFeedTheExistingFlows() throws Exception {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/token", exchange -> respondJson(
+        exchange, 200, "{\"access_token\":\"tok\",\"expires_in\":3600}"));
+    server.createContext("/v1/tracks/4PTG3Z6ehGkBFwjybzWkR8", exchange -> respondJson(
+        exchange,
+        200,
+        "{\"name\":\"API Song\",\"artists\":[{\"name\":\"API Artist\"}]}"));
+    server.createContext("/v1/playlists/37i9dQZF1DXcBWIGoYBM5M/items", exchange -> respondJson(
+        exchange,
+        200,
+        "{\"items\":["
+            + "{\"item\":{\"type\":\"track\",\"name\":\"One\",\"artists\":[{\"name\":\"Artist A\"}]}},"
+            + "{\"item\":{\"type\":\"track\",\"name\":\"Two\",\"artists\":[{\"name\":\"Artist B\"}]}}"
+            + "],\"total\":2}"));
+    server.createContext("/v1/catalog/us/playlists/pl.abc", exchange -> respondJson(
+        exchange,
+        200,
+        "{\"data\":[{\"relationships\":{\"tracks\":{\"data\":["
+            + "{\"attributes\":{\"name\":\"Apple One\",\"artistName\":\"Apple Artist\"}}"
+            + "],\"next\":null}}}]}"));
+    server.start();
+    try {
+      String base = "http://127.0.0.1:" + server.getAddress().getPort();
+      SpotifyClient spotify =
+          SpotifyClient.forEndpoint(
+              "id",
+              "secret",
+              Optional.of("refresh"),
+              Duration.ofSeconds(5),
+              URI.create(base + "/token"),
+              URI.create(base + "/v1"));
+      AppleMusicClient apple =
+          AppleMusicClient.forEndpoint(
+              jwt(), "us", Optional.empty(), Duration.ofSeconds(5), URI.create(base));
+      MetadataLookup metadata =
+          new MetadataLookup(
+              URI.create("https://example.invalid"),
+              Duration.ofSeconds(5),
+              spotify,
+              apple);
+      RecordingResolver resolver = new RecordingResolver(List.of(candidate("API Song")));
+      PlaybackService service =
+          new PlaybackService(
+              new SilentVoice(),
+              new Config(Map.of("DISCORD_TOKEN", "test", "PLAY_COOLDOWN_S", "0")),
+              Clock.systemUTC(),
+              resolver,
+              metadata);
+
+      PlaybackService.PlayResult track =
+          service
+              .play(1L, 2L, 3L, "https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8")
+              .join();
+      assertTrue(track.queued());
+      assertEquals("", track.message());
+      assertEquals("API Artist - API Song", resolver.lastText.get());
+
+      PlaybackService.PlayResult playlist =
+          service
+              .play(1L, 2L, 3L, "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+              .join();
+      assertTrue(playlist.playlist() != null);
+      assertEquals(2, playlist.playlist().items().size());
+
+      PlaybackService.PlayResult applePlaylist =
+          service
+              .play(1L, 2L, 3L, "https://music.apple.com/us/playlist/x/pl.abc")
+              .join();
+      assertTrue(applePlaylist.playlist() != null);
+      assertEquals(1, applePlaylist.playlist().items().size());
     } finally {
       server.stop(0);
     }
@@ -1003,5 +1085,28 @@ class PlaybackServiceTest {
     assertTrue(service.queueView(77L).queued().isEmpty());
     assertTrue(service.isIdle(77L));
     assertEquals("Left the voice channel.", service.leave(77L));
+  }
+
+  private static void respondJson(HttpExchange exchange, int status, String body)
+      throws IOException {
+    byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+    exchange.getResponseHeaders().set("Content-Type", "application/json");
+    exchange.sendResponseHeaders(status, bytes.length);
+    exchange.getResponseBody().write(bytes);
+    exchange.close();
+  }
+
+  private static String jwt() {
+    Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+    String header =
+        encoder.encodeToString(
+            "{\"alg\":\"ES256\",\"kid\":\"key\"}".getBytes(StandardCharsets.UTF_8));
+    String payload =
+        encoder.encodeToString(
+            ("{\"iss\":\"team\",\"iat\":1,\"exp\":"
+                    + (System.currentTimeMillis() / 1000 + 3600)
+                    + "}")
+                .getBytes(StandardCharsets.UTF_8));
+    return header + "." + payload + ".signature";
   }
 }

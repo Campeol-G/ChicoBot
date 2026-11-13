@@ -63,6 +63,34 @@ class AppleMusicClientTest {
     });
     server.createContext("/v1/catalog/us/playlists/pl.missing", exchange -> respond(exchange, 404, "{}"));
     server.createContext("/v1/catalog/us/playlists/pl.denied", exchange -> respond(exchange, 401, "{}"));
+    server.createContext("/v1/catalog/us/playlists/pl.denied403", exchange -> respond(exchange, 403, "{}"));
+    server.createContext("/v1/catalog/us/playlists/pl.cap", exchange -> {
+      requestedPaths.add(exchange.getRequestURI().getPath());
+      respond(
+          exchange,
+          200,
+          "{\"data\":[{\"id\":\"pl.cap\",\"type\":\"playlists\",\"relationships\":{\"tracks\":{\"data\":["
+              + tracksArray(100)
+              + "],\"next\":\"/v1/catalog/us/playlists/pl.cap/tracks?offset=100\"}}}]}");
+    });
+    server.createContext("/v1/catalog/us/playlists/pl.cap/tracks", exchange -> {
+      requestedPaths.add(exchange.getRequestURI().getPath());
+      respond(
+          exchange,
+          200,
+          "{\"data\":["
+              + tracksArray(100)
+              + "],\"next\":\"/v1/catalog/us/playlists/pl.cap/tracks?offset=200\"}");
+    });
+    server.createContext("/v1/catalog/us/playlists/pl.evil", exchange -> {
+      requestedPaths.add(exchange.getRequestURI().getPath());
+      respond(
+          exchange,
+          200,
+          "{\"data\":[{\"id\":\"pl.evil\",\"type\":\"playlists\",\"relationships\":{\"tracks\":{\"data\":["
+              + tracksArray(1)
+              + "],\"next\":\"https://evil.example/tracks\"}}}]}");
+    });
     server.createContext("/v1/catalog/us/playlists/pl.limited", exchange -> {
       if (limitedCalls.getAndIncrement() == 0) {
         exchange.getResponseHeaders().set("Retry-After", "0");
@@ -116,6 +144,21 @@ class AppleMusicClientTest {
           ],"next":null
         }}}]}
         """;
+  }
+
+  private static String tracksArray(int count) {
+    StringBuilder data = new StringBuilder();
+    for (int i = 0; i < count; i++) {
+      if (i > 0) {
+        data.append(',');
+      }
+      data.append("{\"id\":\"")
+          .append(i)
+          .append("\",\"type\":\"songs\",\"attributes\":{\"name\":\"Song ")
+          .append(i)
+          .append("\",\"artistName\":\"Artist\"}}");
+    }
+    return data.toString();
   }
 
   private static String jwt(long expiresAt) {
@@ -225,6 +268,49 @@ class AppleMusicClientTest {
             .get();
 
     assertTrue(content.transientError());
+  }
+
+  @Test
+  void configuredStorefrontIsUsedWhenUrlHasNone() throws Exception {
+    AppleMusicClient.Content content =
+        client("br")
+            .resolvePlaylist(URI.create("https://music.apple.com/playlist/x/pl.abc"))
+            .get();
+
+    assertEquals(2, content.tracks().size());
+    assertEquals("/v1/catalog/br/playlists/pl.abc", requestedPaths.get(0));
+  }
+
+  @Test
+  void forbiddenIsAnError() throws Exception {
+    AppleMusicClient.Content content =
+        client("us")
+            .resolvePlaylist(URI.create("https://music.apple.com/us/playlist/x/pl.denied403"))
+            .get();
+
+    assertTrue(content.error().contains("rejected"));
+  }
+
+  @Test
+  void playlistStopsAtFiveHundredTracks() throws Exception {
+    AppleMusicClient.Content content =
+        client("us")
+            .resolvePlaylist(URI.create("https://music.apple.com/us/playlist/x/pl.cap"))
+            .get();
+
+    assertEquals(500, content.tracks().size());
+    assertEquals(5, requestedPaths.size());
+  }
+
+  @Test
+  void nextToAnotherHostIsRejected() throws Exception {
+    AppleMusicClient.Content content =
+        client("us")
+            .resolvePlaylist(URI.create("https://music.apple.com/us/playlist/x/pl.evil"))
+            .get();
+
+    assertTrue(content.transientError());
+    assertEquals(1, requestedPaths.size());
   }
 
   @Test
