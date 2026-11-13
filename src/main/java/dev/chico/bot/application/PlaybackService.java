@@ -50,7 +50,7 @@ public final class PlaybackService {
       "Spotify is only partially supported right now (title-only fallback), so the search may"
           + " pick a different version.";
   private static final String SPOTIFY_COLLECTION_REFUSAL =
-      "That Spotify link is not a single track. Send a track or playlist link.";
+      "That Spotify link is not a single track. Send a track link or the song name.";
   private static final String UNREADABLE_LINK =
       "Could not read that link. Send the track name instead.";
 
@@ -152,12 +152,16 @@ public final class PlaybackService {
           .status()
           .thenAccept(
               status -> {
-                if (status.premium()) {
-                  log.info("Spotify user mode enabled for {}", status.displayName());
-                } else {
+                if (status.userMode()) {
                   log.info(
-                      "Spotify user mode disabled: {}",
-                      status.error() == null ? "not premium" : status.error());
+                      "Spotify user mode enabled for {}",
+                      status.displayName() == null
+                          ? "the configured account"
+                          : status.displayName());
+                } else if (status.configured()) {
+                  log.info("Spotify user mode unavailable: {}", status.error());
+                } else {
+                  log.info("Spotify user mode not configured; using public metadata");
                 }
               });
     }
@@ -431,22 +435,49 @@ public final class PlaybackService {
 
   private CompletableFuture<PlayResult> playSpotify(
       long guildId, long voiceChannelId, long userId, UrlDecision.Accepted accepted) {
+    if (!metadata.spotifyEnabled()) {
+      return playSpotifyOembed(guildId, voiceChannelId, userId, accepted);
+    }
+    return metadata
+        .spotifyContent(new UrlQuery(Source.SPOTIFY, accepted.uri()))
+        .thenCompose(
+            content -> {
+              if (content.error() != null) {
+                return CompletableFuture.completedFuture(refused(content.error()));
+              }
+              if (content.kind() == SpotifyClient.Kind.PLAYLIST) {
+                PlaylistPreview preview =
+                    playlistFlow.fromContent(
+                        userId, guildId, content, accepted.singleTrack());
+                return CompletableFuture.completedFuture(
+                    preview.sessionId() == null
+                        ? refused(preview.error())
+                        : new PlayResult(false, "", null, preview));
+              }
+              if (content.kind() == SpotifyClient.Kind.TRACK
+                  && !content.tracks().isEmpty()) {
+                return playSpotifyText(
+                    guildId, voiceChannelId, userId, content.tracks().get(0), true);
+              }
+              return playSpotifyOembed(guildId, voiceChannelId, userId, accepted);
+            })
+        .exceptionally(
+            failure -> {
+              log.warn("Spotify metadata failed", failure);
+              return refused(UNREADABLE_LINK);
+            });
+  }
+
+  private CompletableFuture<PlayResult> playSpotifyOembed(
+      long guildId, long voiceChannelId, long userId, UrlDecision.Accepted accepted) {
     return metadata
         .spotifyTitle(accepted.uri())
         .thenCompose(
             found ->
                 switch (found.kind()) {
                   case FOUND ->
-                      playQuery(guildId, voiceChannelId, userId, new TextQuery(found.title()))
-                          .thenApply(
-                              played ->
-                                  played.queued()
-                                      ? new PlayResult(
-                                          true,
-                                          spotifyNotice(found.viaApi()),
-                                          played.candidate(),
-                                          played.playlist())
-                                      : played);
+                      playSpotifyText(
+                          guildId, voiceChannelId, userId, found.title(), found.viaApi());
                   case NOT_A_TRACK ->
                       CompletableFuture.completedFuture(refused(SPOTIFY_COLLECTION_REFUSAL));
                   case FAILED ->
@@ -457,6 +488,20 @@ public final class PlaybackService {
               log.warn("Spotify metadata failed", failure);
               return refused(UNREADABLE_LINK);
             });
+  }
+
+  private CompletableFuture<PlayResult> playSpotifyText(
+      long guildId, long voiceChannelId, long userId, String title, boolean viaApi) {
+    return playQuery(guildId, voiceChannelId, userId, new TextQuery(title))
+        .thenApply(
+            played ->
+                played.queued()
+                    ? new PlayResult(
+                        true,
+                        spotifyNotice(viaApi),
+                        played.candidate(),
+                        played.playlist())
+                    : played);
   }
 
   static String spotifyNotice(boolean viaApi) {

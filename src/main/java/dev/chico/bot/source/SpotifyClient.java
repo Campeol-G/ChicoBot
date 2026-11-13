@@ -20,8 +20,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Spotify Web API reader. Metadata only: playback always resolves through
- * YouTube/SoundCloud search. The client uses client credentials by default and
- * an optional user refresh token for Premium/private data.
+ * YouTube/SoundCloud search. Client credentials cover public track metadata;
+ * a user refresh token (PKCE) is required for playlist contents.
  */
 public final class SpotifyClient {
 
@@ -31,12 +31,20 @@ public final class SpotifyClient {
     UNSUPPORTED
   }
 
-  /** Resolved link: one search string, a playlist list, or unsupported. */
+  /** Resolved link: one search string, a playlist list, or an error state. */
   public record Content(
-      Kind kind, List<String> tracks, boolean unavailable, boolean transientError) {
+      Kind kind,
+      List<String> tracks,
+      boolean unavailable,
+      boolean transientError,
+      String error) {
 
     public Content(Kind kind, List<String> tracks, boolean unavailable) {
-      this(kind, tracks, unavailable, false);
+      this(kind, tracks, unavailable, false, null);
+    }
+
+    public Content(Kind kind, List<String> tracks, boolean unavailable, boolean transientError) {
+      this(kind, tracks, unavailable, transientError, null);
     }
 
     static Content track(String title) {
@@ -58,15 +66,31 @@ public final class SpotifyClient {
     static Content transientFailure() {
       return new Content(Kind.UNSUPPORTED, List.of(), false, true);
     }
+
+    static Content userRequired() {
+      return new Content(
+          Kind.PLAYLIST,
+          List.of(),
+          false,
+          false,
+          "Spotify playlists need a Spotify login. Run the Spotify login setup and try again.");
+    }
+
+    static Content error(String message) {
+      return new Content(Kind.UNSUPPORTED, List.of(), false, false, message);
+    }
   }
 
   /** Health result for the optional user token. */
   public record SpotifyStatus(
-      boolean configured, boolean premium, String displayName, String error) {
+      boolean configured, boolean userMode, String displayName, String error) {
   }
 
   private static final int PAGE_SIZE = 50;
   private static final int MAX_PLAYLIST_TRACKS = 500;
+  private static final String PLAYLIST_OWNERSHIP_MESSAGE =
+      "Spotify only lets the bot read playlists you own or collaborate on. Check the Spotify"
+          + " login and try again.";
 
   private final HttpClient http;
   private final Clock clock;
@@ -143,7 +167,14 @@ public final class SpotifyClient {
     return userModeEnabled;
   }
 
-  /** Refreshes the user token, checks /v1/me and records Premium status. */
+  public boolean userConfigured() {
+    return currentRefreshToken != null;
+  }
+
+  /**
+   * Refreshes the user token and validates it with /v1/me. Spotify removed the
+   * product field in 2026, so any valid user token enables user mode.
+   */
   public CompletableFuture<SpotifyStatus> status() {
     if (currentRefreshToken == null) {
       return CompletableFuture.completedFuture(new SpotifyStatus(false, false, null, null));
@@ -153,25 +184,27 @@ public final class SpotifyClient {
         .thenApply(
             result -> {
               if (result.status() != 200) {
-                userModeEnabled = false;
+                boolean definitive =
+                    result.status() == 400 || result.status() == 401 || result.status() == 403;
+                if (definitive) {
+                  userModeEnabled = false;
+                }
                 invalidateToken();
                 return new SpotifyStatus(
-                    true, false, null, "Spotify profile status " + result.status());
+                    true, userModeEnabled, null, "Spotify profile status " + result.status());
               }
-              String product = result.body().get("product").text();
               String displayName = result.body().get("display_name").text();
-              boolean premium = "premium".equalsIgnoreCase(product);
-              userModeEnabled = premium;
-              if (!premium) {
-                invalidateToken();
-              }
-              return new SpotifyStatus(true, premium, displayName, null);
+              userModeEnabled = true;
+              return new SpotifyStatus(true, true, displayName, null);
             })
         .exceptionally(
             failure -> {
-              userModeEnabled = false;
+              if (isDefinitive(failure)) {
+                userModeEnabled = false;
+              }
               invalidateToken();
-              return new SpotifyStatus(true, false, null, "Spotify user token refresh failed");
+              return new SpotifyStatus(
+                  true, userModeEnabled, null, "Spotify status temporarily unavailable");
             });
   }
 
@@ -209,26 +242,45 @@ public final class SpotifyClient {
   }
 
   public CompletableFuture<Content> playlist(String id) {
+    if (!userModeEnabled || currentRefreshToken == null) {
+      return CompletableFuture.completedFuture(Content.userRequired());
+    }
     List<String> tracks = new ArrayList<>();
     return playlistPage(id, 0, tracks)
-        .thenApply(ignored -> Content.playlist(tracks))
+        .thenApply(ignored -> Content.playlist(trim(tracks)))
         .exceptionally(
             failure -> {
               Throwable cause =
                   failure instanceof CompletionException ? failure.getCause() : failure;
-              return cause instanceof UnavailablePlaylistException
-                  ? Content.unavailablePlaylist()
-                  : Content.transientFailure();
+              if (cause instanceof PlaylistForbiddenException) {
+                return Content.error(PLAYLIST_OWNERSHIP_MESSAGE);
+              }
+              if (cause instanceof PlaylistUnauthorizedException) {
+                return Content.error(
+                    "Spotify login expired. Run the Spotify login setup again.");
+              }
+              if (cause instanceof UnavailablePlaylistException) {
+                return Content.unavailablePlaylist();
+              }
+              return Content.transientFailure();
             });
   }
 
   private CompletableFuture<Void> playlistPage(String id, int offset, List<String> tracks) {
+    // NOTA: Spotify removed /playlists/{id}/tracks in 2026; /items uses
+    // "item" (or the deprecated "track") for each entry.
     String path =
-        "/playlists/" + id + "/tracks?limit=" + PAGE_SIZE + "&offset=" + offset;
+        "/playlists/" + id + "/items?limit=" + PAGE_SIZE + "&offset=" + offset;
     return getJson(path, true)
         .thenCompose(
             json -> {
-              if (json.status() == 403 || json.status() == 404) {
+              if (json.status() == 403) {
+                throw new CompletionException(new PlaylistForbiddenException());
+              }
+              if (json.status() == 401) {
+                throw new CompletionException(new PlaylistUnauthorizedException());
+              }
+              if (json.status() == 404) {
                 throw new CompletionException(new UnavailablePlaylistException());
               }
               if (json.status() != 200) {
@@ -236,30 +288,42 @@ public final class SpotifyClient {
                     new IllegalStateException("Spotify playlist status " + json.status()));
               }
               List<JsonBrowser> items = json.body().get("items").values();
-              for (JsonBrowser item : items) {
-                JsonBrowser track = item.get("track");
-                String title = artistTitle(track);
-                if (title != null) {
+              for (JsonBrowser entry : items) {
+                JsonBrowser item = entry.get("item");
+                if (item == null || item.isNull()) {
+                  item = entry.get("track");
+                }
+                String title = artistTitle(item);
+                if (title != null && tracks.size() < MAX_PLAYLIST_TRACKS) {
                   tracks.add(title);
                 }
               }
-              if (items.isEmpty() || tracks.size() >= MAX_PLAYLIST_TRACKS) {
+              int fetched = offset + items.size();
+              if (items.isEmpty() || fetched >= MAX_PLAYLIST_TRACKS) {
                 return CompletableFuture.completedFuture(null);
               }
               long total = json.body().get("total").asLong(-1);
-              boolean more =
-                  total >= 0
-                      ? (long) offset + items.size() < total
-                      : items.size() >= PAGE_SIZE;
+              boolean more = total >= 0 ? fetched < total : items.size() >= PAGE_SIZE;
               if (!more) {
                 return CompletableFuture.completedFuture(null);
               }
-              return playlistPage(id, offset + items.size(), tracks);
+              return playlistPage(id, fetched, tracks);
             });
+  }
+
+  private static List<String> trim(List<String> tracks) {
+    if (tracks.size() <= MAX_PLAYLIST_TRACKS) {
+      return tracks;
+    }
+    return List.copyOf(tracks.subList(0, MAX_PLAYLIST_TRACKS));
   }
 
   private static String artistTitle(JsonBrowser track) {
     if (track == null || track.isNull()) {
+      return null;
+    }
+    String type = track.get("type").text();
+    if (type != null && !"track".equals(type)) {
       return null;
     }
     String name = track.get("name").text();
@@ -339,11 +403,11 @@ public final class SpotifyClient {
             .GET()
             .build();
     return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-        .thenCompose(response -> handle(path, retry, bearer, response));
+        .thenCompose(response -> handle(path, retry, response));
   }
 
   private CompletableFuture<JsonResult> handle(
-      String path, boolean retry, String bearer, HttpResponse<String> response) {
+      String path, boolean retry, HttpResponse<String> response) {
     int status = response.statusCode();
     if (status == 401 && retry) {
       invalidateToken();
@@ -396,7 +460,9 @@ public final class SpotifyClient {
             refreshUserToken(currentRefreshToken)
                 .exceptionallyCompose(
                     failure -> {
-                      userModeEnabled = false;
+                      if (isDefinitive(failure)) {
+                        userModeEnabled = false;
+                      }
                       invalidateToken();
                       return requestClientCredentials();
                     });
@@ -433,7 +499,7 @@ public final class SpotifyClient {
             response -> {
               if (response.statusCode() != 200) {
                 throw new CompletionException(
-                    new IllegalStateException("Spotify refresh status " + response.statusCode()));
+                    new SpotifyHttpException(response.statusCode(), "Spotify refresh status"));
               }
               try {
                 JsonBrowser json = JsonBrowser.parse(response.body());
@@ -476,7 +542,7 @@ public final class SpotifyClient {
             response -> {
               if (response.statusCode() != 200) {
                 throw new CompletionException(
-                    new IllegalStateException("Spotify token status " + response.statusCode()));
+                    new SpotifyHttpException(response.statusCode(), "Spotify token status"));
               }
               try {
                 JsonBrowser json = JsonBrowser.parse(response.body());
@@ -499,6 +565,12 @@ public final class SpotifyClient {
             });
   }
 
+  private static boolean isDefinitive(Throwable failure) {
+    Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    return cause instanceof SpotifyHttpException http
+        && (http.status() == 400 || http.status() == 401 || http.status() == 403);
+  }
+
   private static String encode(String value) {
     return URLEncoder.encode(value, StandardCharsets.UTF_8);
   }
@@ -510,7 +582,27 @@ public final class SpotifyClient {
     }
   }
 
-  /** Internal marker for a private/unavailable playlist. */
+  /** HTTP status carried out of the token requests for failure classification. */
+  static final class SpotifyHttpException extends RuntimeException {
+    private final int status;
+
+    SpotifyHttpException(int status, String message) {
+      super(message + " " + status);
+      this.status = status;
+    }
+
+    int status() {
+      return status;
+    }
+  }
+
+  /** Internal markers for playlist error mapping. */
   static final class UnavailablePlaylistException extends RuntimeException {
+  }
+
+  static final class PlaylistForbiddenException extends RuntimeException {
+  }
+
+  static final class PlaylistUnauthorizedException extends RuntimeException {
   }
 }

@@ -1,6 +1,8 @@
 package dev.chico.bot.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -27,6 +29,40 @@ class SpotifyOauthSetupTest {
     assertEquals("SPOTIFY_REFRESH_TOKEN=refresh-value\n", Files.readString(file));
     assertEquals(
         "rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)));
+  }
+
+  @Test
+  void existingTokenFileIsTightenedBeforeWrite(@TempDir Path dir) throws Exception {
+    Path file = dir.resolve("token");
+    Files.writeString(file, "old");
+    Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
+
+    SpotifyOauthSetup.writeToken(file, "new");
+
+    assertEquals("SPOTIFY_REFRESH_TOKEN=new\n", Files.readString(file));
+    assertEquals(
+        "rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)));
+  }
+
+  @Test
+  void tokenExchangeBodyHasNoClientSecret() {
+    String body = SpotifyOauthSetup.tokenBody("client", "verifier", "code");
+
+    assertTrue(body.contains("grant_type=authorization_code"));
+    assertTrue(body.contains("code_verifier=verifier"));
+    assertFalse(body.contains("client_secret"));
+  }
+
+  @Test
+  void callbackRejectsStateMismatch() {
+    assertTrue(
+        SpotifyOauthSetup.callbackError("code=x&state=wrong", "expected")
+            .contains("state"));
+  }
+
+  @Test
+  void callbackAcceptsMatchingState() {
+    assertNull(SpotifyOauthSetup.callbackError("code=x&state=expected", "expected"));
   }
 
   @Test

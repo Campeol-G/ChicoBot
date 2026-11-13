@@ -66,20 +66,12 @@ public final class SpotifyOauthSetup {
         "/callback",
         exchange -> {
           String query = exchange.getRequestURI().getQuery();
-          String receivedState = queryParam(query, "state");
-          String receivedCode = queryParam(query, "code");
-          String receivedError = queryParam(query, "error");
-          if (!state.equals(receivedState)) {
-            error.set("state mismatch");
-            respond(exchange, 400, "State mismatch. Close this tab and run again.");
-          } else if (receivedError != null) {
-            error.set(receivedError);
-            respond(exchange, 400, "Authorization denied: " + receivedError);
-          } else if (receivedCode == null || receivedCode.isBlank()) {
-            error.set("missing code");
-            respond(exchange, 400, "Missing authorization code.");
+          String callbackError = callbackError(query, state);
+          if (callbackError != null) {
+            error.set(callbackError);
+            respond(exchange, 400, "Authorization failed: " + callbackError + ".");
           } else {
-            code.set(receivedCode);
+            code.set(queryParam(query, "code"));
             respond(exchange, 200, "Authorization received. You can close this tab.");
           }
           done.countDown();
@@ -137,6 +129,13 @@ public final class SpotifyOauthSetup {
   }
 
   static void writeToken(Path file, String token) throws IOException {
+    if (Files.exists(file)) {
+      try {
+        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+      } catch (UnsupportedOperationException ignored) {
+        // Linux is the only supported platform for this bot.
+      }
+    }
     try {
       Files.createFile(
           file, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
@@ -156,18 +155,21 @@ public final class SpotifyOauthSetup {
     }
   }
 
+  static String tokenBody(String clientId, String verifier, String code) {
+    return "grant_type=authorization_code"
+        + "&code="
+        + encode(code)
+        + "&redirect_uri="
+        + encode(REDIRECT_URI)
+        + "&client_id="
+        + encode(clientId)
+        + "&code_verifier="
+        + encode(verifier);
+  }
+
   private static String exchangeCode(String clientId, String verifier, String code)
       throws Exception {
-    String body =
-        "grant_type=authorization_code"
-            + "&code="
-            + encode(code)
-            + "&redirect_uri="
-            + encode(REDIRECT_URI)
-            + "&client_id="
-            + encode(clientId)
-            + "&code_verifier="
-            + encode(verifier);
+    String body = tokenBody(clientId, verifier, code);
     HttpRequest request =
         HttpRequest.newBuilder(URI.create(TOKEN))
             .timeout(Duration.ofSeconds(20))
@@ -192,6 +194,22 @@ public final class SpotifyOauthSetup {
     exchange.sendResponseHeaders(status, bytes.length);
     exchange.getResponseBody().write(bytes);
     exchange.close();
+  }
+
+  static String callbackError(String query, String expectedState) {
+    String receivedState = queryParam(query, "state");
+    if (!expectedState.equals(receivedState)) {
+      return "state mismatch";
+    }
+    String receivedError = queryParam(query, "error");
+    if (receivedError != null) {
+      return "authorization denied: " + receivedError;
+    }
+    String receivedCode = queryParam(query, "code");
+    if (receivedCode == null || receivedCode.isBlank()) {
+      return "missing code";
+    }
+    return null;
   }
 
   private static String queryParam(String query, String name) {

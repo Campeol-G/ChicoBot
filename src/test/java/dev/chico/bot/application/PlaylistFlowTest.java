@@ -133,6 +133,40 @@ class PlaylistFlowTest {
     assertTrue(preview.error().contains("Could not read"));
   }
 
+  @Test
+  void spotifyTransientPlaylistIsSearchFailed() {
+    PlaylistPreview preview =
+        flow()
+            .fromContent(
+                1L,
+                2L,
+                new SpotifyClient.Content(
+                    SpotifyClient.Kind.UNSUPPORTED, List.of(), false, true),
+                null);
+
+    assertNull(preview.sessionId());
+    assertEquals("Search failed. Try again later.", preview.error());
+  }
+
+  @Test
+  void spotifyUserRequiredPlaylistKeepsLoginMessage() {
+    PlaylistPreview preview =
+        flow()
+            .fromContent(
+                1L,
+                2L,
+                new SpotifyClient.Content(
+                    SpotifyClient.Kind.PLAYLIST,
+                    List.of(),
+                    false,
+                    false,
+                    "Spotify playlists need a Spotify login. Run the Spotify login setup and try again."),
+                null);
+
+    assertNull(preview.sessionId());
+    assertTrue(preview.error().contains("Spotify playlists need a Spotify login"));
+  }
+
   private static TrackResolver failingResolver(Throwable failure) {
     return new TrackResolver() {
       @Override

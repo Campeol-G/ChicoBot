@@ -15,7 +15,8 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Reads track metadata from links that carry no audio. Apple Music uses the
- * public iTunes lookup; Spotify uses the public oEmbed endpoint (title only).
+ * public iTunes lookup; Spotify uses the Web API when configured and falls
+ * back to the public oEmbed title.
  */
 public final class MetadataLookup {
 
@@ -204,12 +205,17 @@ public final class MetadataLookup {
     return spotify != null;
   }
 
-  /** Playlist metadata for the confirm preview (Spotify only). */
-  public CompletableFuture<SpotifyClient.Content> spotifyPlaylist(UrlQuery query) {
+  /** Raw Spotify content (track, playlist or unsupported) for play routing. */
+  public CompletableFuture<SpotifyClient.Content> spotifyContent(UrlQuery query) {
     if (spotify == null || query.source() != Source.SPOTIFY) {
       return CompletableFuture.completedFuture(SpotifyClient.Content.unsupported());
     }
     return spotify.resolve(query.uri());
+  }
+
+  /** Playlist metadata for the confirm preview (Spotify only). */
+  public CompletableFuture<SpotifyClient.Content> spotifyPlaylist(UrlQuery query) {
+    return spotifyContent(query);
   }
 
   /** Resolves a metadata-only link to "artist - title" for text search. */

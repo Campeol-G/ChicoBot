@@ -312,7 +312,7 @@ class PlaybackServiceTest {
             .join();
 
     assertFalse(result.queued());
-    assertTrue(result.message().contains("SPOTIFY_CLIENT_ID"));
+    assertTrue(result.message().contains("Spotify login"));
   }
 
   @Test

@@ -37,11 +37,13 @@ class SpotifyClientTest {
   private final AtomicInteger limitedCalls = new AtomicInteger();
   private final AtomicInteger refreshRequests = new AtomicInteger();
   private final AtomicInteger clientCredentialRequests = new AtomicInteger();
+  private final AtomicInteger nullPlaylistRequests = new AtomicInteger();
   private final List<String> refreshTokensSeen = new CopyOnWriteArrayList<>();
+  private final List<String> requestedPaths = new CopyOnWriteArrayList<>();
   private final AtomicReference<String> lastMeAuth = new AtomicReference<>();
   private final AtomicReference<String> lastTrackAuth = new AtomicReference<>();
-  private volatile boolean freeAccount;
-  private volatile boolean failRefresh;
+  private volatile int refreshStatus = 200;
+  private volatile boolean refreshMissingToken;
 
   @BeforeEach
   void startServer() throws IOException {
@@ -53,14 +55,15 @@ class SpotifyClientTest {
       if (body.contains("grant_type=refresh_token")) {
         refreshRequests.incrementAndGet();
         refreshTokensSeen.add(String.valueOf(formValue(body, "refresh_token")));
-        if (failRefresh) {
-          respond(exchange, 400, "{}");
+        if (refreshStatus != 200) {
+          respond(exchange, refreshStatus, "{}");
           return;
         }
+        String rotated = refreshMissingToken ? "" : ",\"refresh_token\":\"refresh-2\"";
         respond(
             exchange,
             200,
-            "{\"access_token\":\"user-token\",\"refresh_token\":\"refresh-2\",\"expires_in\":3600}");
+            "{\"access_token\":\"user-token\"" + rotated + ",\"expires_in\":3600}");
         return;
       }
       clientCredentialRequests.incrementAndGet();
@@ -68,11 +71,7 @@ class SpotifyClientTest {
     });
     server.createContext("/v1/me", exchange -> {
       lastMeAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
-      String product = freeAccount ? "free" : "premium";
-      respond(
-          exchange,
-          200,
-          "{\"product\":\"" + product + "\",\"display_name\":\"Chico\"}");
+      respond(exchange, 200, "{\"display_name\":\"Chico\"}");
     });
     server.createContext("/v1/tracks/track1", exchange -> {
       lastTrackAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
@@ -100,20 +99,29 @@ class SpotifyClientTest {
       exchange.sendResponseHeaders(302, -1);
       exchange.close();
     });
+    server.createContext("/short-playlist", exchange -> {
+      exchange
+          .getResponseHeaders()
+          .set("Location", "https://open.spotify.com/playlist/list1");
+      exchange.sendResponseHeaders(302, -1);
+      exchange.close();
+    });
     server.createContext("/short-evil", exchange -> {
       exchange.getResponseHeaders().set("Location", "https://example.com/x");
       exchange.sendResponseHeaders(302, -1);
       exchange.close();
     });
-    server.createContext("/v1/playlists/private/tracks", exchange -> respond(exchange, 404, "{}"));
-    server.createContext("/v1/playlists/list1/tracks", exchange -> {
+    server.createContext("/v1/playlists/private/items", exchange -> respond(exchange, 404, "{}"));
+    server.createContext("/v1/playlists/forbidden/items", exchange -> respond(exchange, 403, "{}"));
+    server.createContext("/v1/playlists/list1/items", exchange -> {
+      requestedPaths.add(exchange.getRequestURI().getPath());
       String query = exchange.getRequestURI().getQuery();
       boolean firstPage = query == null || query.contains("offset=0");
-      if (firstPage) {
-        respond(exchange, 200, page(50));
-      } else {
-        respond(exchange, 200, page(1));
-      }
+      respond(exchange, 200, firstPage ? page(49) : page(1));
+    });
+    server.createContext("/v1/playlists/nulls/items", exchange -> {
+      nullPlaylistRequests.incrementAndGet();
+      respond(exchange, 200, nullPage());
     });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -169,7 +177,8 @@ class SpotifyClientTest {
   }
 
   private static String page(int validTracks) {
-    String item = "{\"track\":{\"name\":\"Song\",\"artists\":[{\"name\":\"Artist\"}]}}";
+    String item =
+        "{\"item\":{\"type\":\"track\",\"name\":\"Song\",\"artists\":[{\"name\":\"Artist\"}]}}";
     StringBuilder items = new StringBuilder();
     for (int i = 0; i < validTracks; i++) {
       if (i > 0) {
@@ -180,8 +189,19 @@ class SpotifyClientTest {
     if (validTracks > 0) {
       items.append(',');
     }
-    items.append("{\"track\":null}");
-    return "{\"items\":[" + items + "]}";
+    items.append("{\"item\":null}");
+    return "{\"items\":[" + items + "],\"total\":51}";
+  }
+
+  private static String nullPage() {
+    StringBuilder items = new StringBuilder();
+    for (int i = 0; i < 50; i++) {
+      if (i > 0) {
+        items.append(',');
+      }
+      items.append("{\"item\":null}");
+    }
+    return "{\"items\":[" + items + "],\"total\":1000}";
   }
 
   @Test
@@ -216,19 +236,44 @@ class SpotifyClientTest {
 
   @Test
   void playlistPaginatesAndSkipsNullEntries() throws Exception {
-    SpotifyClient.Content content = client.playlist("list1").get();
+    SpotifyClient.Content content = userClient().playlist("list1").get();
 
     assertEquals(SpotifyClient.Kind.PLAYLIST, content.kind());
-    assertEquals(51, content.tracks().size());
+    assertEquals(50, content.tracks().size());
     assertTrue(content.tracks().stream().allMatch("Artist - Song"::equals));
+    assertEquals(2, requestedPaths.size());
+    assertTrue(requestedPaths.get(0).endsWith("/playlists/list1/items"));
+  }
+
+  @Test
+  void playlistStopsAtFiveHundredFetchedItems() throws Exception {
+    SpotifyClient.Content content = userClient().playlist("nulls").get();
+
+    assertTrue(content.tracks().isEmpty());
+    assertEquals(10, nullPlaylistRequests.get());
   }
 
   @Test
   void privatePlaylistIsUnavailable() throws Exception {
-    SpotifyClient.Content content = client.playlist("private").get();
+    SpotifyClient.Content content = userClient().playlist("private").get();
 
     assertTrue(content.unavailable());
     assertEquals(SpotifyClient.Kind.PLAYLIST, content.kind());
+  }
+
+  @Test
+  void forbiddenPlaylistNeedsOwnership() throws Exception {
+    SpotifyClient.Content content = userClient().playlist("forbidden").get();
+
+    assertTrue(content.error().contains("own or collaborate"));
+  }
+
+  @Test
+  void playlistWithoutUserTokenNeedsLogin() throws Exception {
+    SpotifyClient.Content content = client.playlist("list1").get();
+
+    assertTrue(content.error().contains("Spotify login"));
+    assertTrue(requestedPaths.isEmpty());
   }
 
   @Test
@@ -253,17 +298,27 @@ class SpotifyClientTest {
     SpotifyClient.Content evil =
         client.followShortLink(URI.create(baseUrl + "/short-evil")).get();
     assertEquals(SpotifyClient.Kind.UNSUPPORTED, evil.kind());
-    assertTrue(!evil.transientError());
+    assertFalse(evil.transientError());
   }
 
   @Test
-  void premiumUserTokenIsUsedAndReported() throws Exception {
+  void shortPlaylistLinkResolvesPlaylist() throws Exception {
+    SpotifyClient.Content content =
+        userClient().followShortLink(URI.create(baseUrl + "/short-playlist")).get();
+
+    assertEquals(SpotifyClient.Kind.PLAYLIST, content.kind());
+    assertEquals(50, content.tracks().size());
+    assertTrue(requestedPaths.get(0).endsWith("/playlists/list1/items"));
+  }
+
+  @Test
+  void userTokenWithoutProductIsAccepted() throws Exception {
     SpotifyClient user = userClient();
 
     SpotifyClient.SpotifyStatus status = user.status().get();
 
     assertTrue(status.configured());
-    assertTrue(status.premium());
+    assertTrue(status.userMode());
     assertEquals("Chico", status.displayName());
     assertTrue(user.userModeEnabled());
     assertEquals(1, refreshRequests.get());
@@ -276,13 +331,15 @@ class SpotifyClientTest {
   }
 
   @Test
-  void freeAccountDisablesUserModeAndUsesClientCredentials() throws Exception {
-    freeAccount = true;
+  void failedRefreshFallsBackToClientCredentials() throws Exception {
+    refreshStatus = 400;
     SpotifyClient user = userClient();
 
     SpotifyClient.SpotifyStatus status = user.status().get();
 
-    assertFalse(status.premium());
+    assertTrue(status.configured());
+    assertFalse(status.userMode());
+    assertFalse(status.error().isBlank());
     assertFalse(user.userModeEnabled());
 
     user.track("track1").get();
@@ -292,21 +349,21 @@ class SpotifyClientTest {
   }
 
   @Test
-  void failedRefreshFallsBackToClientCredentials() throws Exception {
-    failRefresh = true;
+  void transientRefreshFailureKeepsUserMode() throws Exception {
+    refreshStatus = 500;
     SpotifyClient user = userClient();
 
     SpotifyClient.SpotifyStatus status = user.status().get();
 
     assertTrue(status.configured());
-    assertFalse(status.premium());
+    assertTrue(status.userMode());
     assertFalse(status.error().isBlank());
-    assertFalse(user.userModeEnabled());
+    assertTrue(user.userModeEnabled());
 
     user.track("track1").get();
 
     assertEquals("Bearer client-token", lastTrackAuth.get());
-    assertEquals(1, clientCredentialRequests.get());
+    assertTrue(user.userModeEnabled());
   }
 
   @Test
@@ -320,10 +377,21 @@ class SpotifyClientTest {
   }
 
   @Test
+  void missingRotatedTokenKeepsCurrentRefreshToken() throws Exception {
+    refreshMissingToken = true;
+    SpotifyClient user = userClient();
+
+    user.status().get();
+    user.status().get();
+
+    assertEquals(List.of("refresh", "refresh"), refreshTokensSeen);
+  }
+
+  @Test
   void statusWithoutRefreshTokenIsNotConfigured() throws Exception {
     SpotifyClient.SpotifyStatus status = client.status().get();
 
     assertFalse(status.configured());
-    assertFalse(status.premium());
+    assertFalse(status.userMode());
   }
 }

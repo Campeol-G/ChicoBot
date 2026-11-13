@@ -38,7 +38,7 @@ public final class PlaylistFlow {
       if (metadata == null || !metadata.spotifyEnabled()) {
         return CompletableFuture.completedFuture(
             PlaylistPreview.error(
-                "Spotify playlists need SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET; see README."));
+                "Spotify playlists need a Spotify login. Run the Spotify login setup and try again."));
       }
       return metadata
           .spotifyPlaylist(new UrlQuery(Source.SPOTIFY, accepted.uri()))
@@ -104,6 +104,9 @@ public final class PlaylistFlow {
       long guildId,
       SpotifyClient.Content content,
       java.net.URI singleTrackUri) {
+    if (content.error() != null) {
+      return PlaylistPreview.error(content.error());
+    }
     if (content.transientError()) {
       return PlaylistPreview.error("Search failed. Try again later.");
     }
