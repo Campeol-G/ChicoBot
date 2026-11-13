@@ -11,6 +11,7 @@ final class DiscordCommands {
 
   static List<CommandData> all() {
     List<CommandData> commands = new ArrayList<>(MusicCommands.commandData());
+    commands.add(HelpCommand.commandData());
     commands.add(PingCommand.commandData());
     commands.add(ImageContextMenu.commandData());
     return List.copyOf(commands);

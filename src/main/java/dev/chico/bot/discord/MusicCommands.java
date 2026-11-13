@@ -20,14 +20,14 @@ public final class MusicCommands extends ListenerAdapter {
 
   static final String PLAY = "play";
   static final String PAUSE = "pause";
-  static final String RESUME = "resume";
   static final String SKIP = "skip";
   static final String STOP = "stop";
   static final String QUEUE = "queue";
   static final String REMOVE = "remove";
-  static final String LEAVE = "leave";
+  static final String EXIT = "exit";
   static final String NOW_PLAYING = "nowplaying";
   static final String LOOP = "loop";
+  static final String UNLOOP = "unloop";
 
   private static final Logger log = LoggerFactory.getLogger(MusicCommands.class);
 
@@ -44,19 +44,19 @@ public final class MusicCommands extends ListenerAdapter {
     return List.of(
         Commands.slash(PLAY, "Play a song by name or link")
             .addOption(OptionType.STRING, "query", "Song name or audio URL", false),
-        Commands.slash(PAUSE, "Pause the current track"),
-        Commands.slash(RESUME, "Resume the current track"),
+        Commands.slash(PAUSE, "Pause the current track (use /play to resume)"),
         Commands.slash(SKIP, "Skip the current track or jump to a queued one")
             .addOption(OptionType.STRING, "target", "Queue number or name", false),
         Commands.slash(STOP, "Stop and clear the queue"),
         Commands.slash(QUEUE, "Show the queue"),
         Commands.slash(REMOVE, "Remove a queued track")
             .addOption(OptionType.STRING, "target", "Queue number or name", true),
-        Commands.slash(LEAVE, "Leave the voice channel"),
+        Commands.slash(EXIT, "Leave the voice channel and clear the queue"),
         Commands.slash(NOW_PLAYING, "Show the current track"),
         Commands.slash(LOOP, "Loop the current track, a queued position or the queue")
             .addOption(
-                OptionType.STRING, "target", "Queue number, all, or disable", false));
+                OptionType.STRING, "target", "Queue number, all, or disable", false),
+        Commands.slash(UNLOOP, "Stop any active loop"));
   }
 
   @Override
@@ -64,14 +64,14 @@ public final class MusicCommands extends ListenerAdapter {
     switch (event.getName()) {
       case PLAY -> onPlay(event);
       case PAUSE -> reply(event, playback.pause(guildOf(event)));
-      case RESUME -> reply(event, playback.resume(guildOf(event)));
       case SKIP -> onSkip(event);
       case STOP -> reply(event, playback.stop(guildOf(event)));
       case QUEUE -> onQueue(event);
       case REMOVE -> onRemove(event);
-      case LEAVE -> reply(event, playback.leave(guildOf(event)));
+      case EXIT -> reply(event, playback.leave(guildOf(event)));
       case NOW_PLAYING -> onNowPlaying(event);
       case LOOP -> onLoop(event);
+      case UNLOOP -> onUnloop(event);
       default -> {
       }
     }
@@ -198,6 +198,13 @@ public final class MusicCommands extends ListenerAdapter {
     Optional<String> target =
         option == null ? Optional.empty() : Optional.of(option.getAsString());
     reply(event, playback.loop(guildOf(event), target));
+  }
+
+  private void onUnloop(SlashCommandInteractionEvent event) {
+    if (!inSameChannel(event)) {
+      return;
+    }
+    reply(event, playback.unloop(guildOf(event)));
   }
 
   private void onQueue(SlashCommandInteractionEvent event) {

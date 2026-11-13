@@ -488,7 +488,7 @@ public final class PlaybackService {
     try {
       position = Integer.parseInt(lowered);
     } catch (NumberFormatException notANumber) {
-      return "Use `/loop`, `/loop <number>`, `/loop all` or `/loop disable`.";
+      return "Use `/loop`, `/loop <number>`, `/loop all`, `/loop disable` or `/unloop`.";
     }
     if (position < 1) {
       return "No queued track matches that.";

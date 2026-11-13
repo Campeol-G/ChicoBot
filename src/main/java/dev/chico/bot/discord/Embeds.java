@@ -199,6 +199,47 @@ public final class Embeds {
         .build();
   }
 
+  public static MessageEmbed help() {
+    return new EmbedBuilder()
+        .setTitle("chicos-bot help")
+        .setDescription(truncate(helpText()))
+        .setColor(Color.BLUE)
+        .build();
+  }
+
+  static String helpText() {
+    return """
+        **Playback**
+        `/play [query]` — play by name or link; bare `/play` resumes.
+        `/pause` — pause the current track.
+        `/skip [target]` — skip the current track or jump to a queue position.
+        `/stop` — stop and clear the queue.
+        `/nowplaying` — show the current track.
+        `/loop [target]` — loop the current track, a queue position, or all.
+        `/unloop` — stop any active loop.
+        `/exit` — leave voice and clear the queue.
+
+        **Queue**
+        `/queue` — post the live queue message.
+        `/remove <target>` — remove a queued track by number or name.
+
+        **Import**
+        Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 10 images). Review the preview, then press **Play all**.
+        `@bot p <song>` — same as `/play` from a message.
+        Message command **Play music from image** — import from an older screenshot.
+
+        **Links and sources**
+        YouTube and SoundCloud links play directly. Apple Music links become a search. Spotify links use the title only (partial support); Spotify playlists are not supported. YouTube and SoundCloud playlist links show a preview before anything is queued.
+
+        **Votes**
+        With 3+ people in the voice channel, skipping or removing someone else's track needs a majority. Your own track is immediate. `/stop` and `/exit` are always free.
+
+        **Other**
+        `/help` — this message.
+        `/ping` — check that the bot is online.
+        """.strip();
+  }
+
   private static String sourceName(Source source) {
     return switch (source) {
       case YOUTUBE -> "YouTube";

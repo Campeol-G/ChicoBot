@@ -53,6 +53,7 @@ public final class Bot {
     QueueLive liveQueue = new QueueLive(jda, playbackRef.get());
     MusicCommands commands = new MusicCommands(playbackRef.get(), liveQueue);
     jda.addEventListener(commands);
+    jda.addEventListener(new HelpCommand());
     playbackRef.get().setQueueChangeListener(liveQueue::refreshIfPresent);
     playbackRef.get().setTrackFailureListener(liveQueue::announceFailure);
     ImportSession.Store sessions =

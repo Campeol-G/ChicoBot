@@ -179,4 +179,17 @@ class EmbedsTest {
 
     assertTrue(embed.getDescription().length() <= 4096, "" + embed.getDescription().length());
   }
+
+  @Test
+  void helpListsEverySlashCommandAndNoRetiredOnes() {
+    String text = Embeds.helpText();
+    for (var command : DiscordCommands.all()) {
+      if (command.getType() == net.dv8tion.jda.api.interactions.commands.Command.Type.SLASH) {
+        assertTrue(text.contains("/" + command.getName()), "missing /" + command.getName());
+      }
+    }
+    assertFalse(text.contains("/resume"));
+    assertFalse(text.contains("/leave"));
+    assertTrue(Embeds.help().getDescription().length() <= 4096);
+  }
 }
