@@ -29,11 +29,13 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
   reads title and artist; Spotify uses the Web API for track metadata when
   client credentials are set, falling back to the public oEmbed title.
   Spotify playlist contents need a user login and only work for playlists
-  you own or collaborate on.
-- Playlist links (YouTube `list=`, SoundCloud sets) show a paginated
-  confirmation before enqueueing. Confirmed playlists are the only path
-  allowed past `QUEUE_MAX`; private or unavailable playlists get their own
-  error.
+  you own or collaborate on. Apple Music playlists are read through the
+  official API when a developer token is configured; library playlists also
+  need a Music User Token.
+- Playlist links (YouTube `list=`, SoundCloud sets, Apple Music, the user's
+  Spotify playlists) show a paginated confirmation before enqueueing.
+  Confirmed playlists are the only path allowed past `QUEUE_MAX`; private or
+  unavailable playlists get their own error.
 - Skipping/removing someone else's track in a call with 3+ humans needs a
   majority vote (`Skipped 1/2.`); your own track is always immediate. `/stop`
   and `/exit` stay free for anyone.
@@ -130,6 +132,9 @@ Only `DISCORD_TOKEN` is required.
 | `SPOTIFY_CLIENT_ID` | empty | Optional Spotify Web API app client id; set with the secret. |
 | `SPOTIFY_CLIENT_SECRET` | empty | Optional Spotify Web API app secret. |
 | `SPOTIFY_REFRESH_TOKEN` | empty | Optional user login for owned/collaborative playlists (below). |
+| `APPLE_MUSIC_DEVELOPER_TOKEN` | empty | Optional Apple Music API developer token (playlists). |
+| `APPLE_MUSIC_STOREFRONT` | `us` | Catalog storefront, e.g. `us` or `br`. |
+| `APPLE_MUSIC_USER_TOKEN` | empty | Optional Music User Token for library playlists. |
 
 ## Spotify (optional)
 
@@ -166,6 +171,26 @@ it is not a Premium check.
    request.
 5. Never commit or share the client secret or refresh token. Rotate the app
    secret in the Spotify dashboard if it leaks.
+
+## Apple Music playlists (optional)
+
+Apple Music playlists are metadata only; audio always plays from YouTube or
+SoundCloud. This path uses the official Apple Music API only; there is no
+scraping or unofficial web-player token.
+
+1. You need an Apple Developer Program account and a MusicKit key. Generate a
+   developer token (JWT with `iss`, `iat`, `exp` and `kid`) using Apple's
+   official instructions.
+2. Set `APPLE_MUSIC_DEVELOPER_TOKEN` in the env file. Set
+   `APPLE_MUSIC_STOREFRONT` to your catalog storefront (default `us`; use
+   `br` for Brazil).
+3. For library/private playlists, set `APPLE_MUSIC_USER_TOKEN` obtained
+   through the official MusicKit authorization for that account.
+4. Playlist links are previewed before enqueueing. Catalog playlists use the
+   storefront in the URL when present, then the configured default.
+5. An expired/rejected developer token gets a clear error; generate a new
+   token and restart. There is no scraping fallback.
+6. Never commit the developer or user tokens.
 
 ## YouTube login-wall (OAuth, optional)
 
