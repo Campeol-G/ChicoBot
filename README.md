@@ -25,10 +25,10 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
 - Message command **Play music from image** for screenshots in older messages.
 - Automatic fallback between YouTube and SoundCloud; per-source circuit
   breaker so a YouTube outage does not stall a 25-track import.
-- Links to Apple Music tracks and Spotify tracks are accepted: Apple Music
-  reads title and artist; Spotify reads only the title through the public
-  oEmbed endpoint (no Premium API account), so its YouTube/SoundCloud match
-  is weaker and the bot says so in the reply. Spotify playlists are refused.
+- Links to Apple Music tracks and Spotify tracks are accepted. Apple Music
+  reads title and artist; Spotify uses the Web API when client credentials
+  are set and falls back to the public oEmbed title. Spotify playlists are
+  previewed and enqueued when credentials are configured.
 - Playlist links (YouTube `list=`, SoundCloud sets) show a paginated
   confirmation before enqueueing. Confirmed playlists are the only path
   allowed past `QUEUE_MAX`; private or unavailable playlists get their own
@@ -126,6 +126,37 @@ Only `DISCORD_TOKEN` is required.
 | `YT_REFRESH_TOKEN` | empty | Optional burner-account OAuth (below). |
 | `YT_CIPHER_URL` | empty | Remote cipher URL (below). Empty = local cipher. |
 | `YT_CIPHER_PASSWORD` | empty | Remote cipher password. |
+| `SPOTIFY_CLIENT_ID` | empty | Optional Spotify Web API app client id; set with the secret. |
+| `SPOTIFY_CLIENT_SECRET` | empty | Optional Spotify Web API app secret. |
+| `SPOTIFY_REFRESH_TOKEN` | empty | Optional user token for Premium/private playlists (below). |
+
+## Spotify (optional)
+
+Spotify links are metadata only; audio always plays from YouTube or
+SoundCloud. Without credentials the bot keeps the public oEmbed fallback
+(title only, playlists refused).
+
+1. Create an app at https://developer.spotify.com/dashboard and set the
+   Redirect URI to `http://127.0.0.1:8888/callback`.
+2. Put `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the env file.
+   Set both or neither.
+3. For Premium/private playlists, run the PKCE helper:
+
+   ```bash
+   export SPOTIFY_CLIENT_ID=your-client-id
+   java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true \
+     -cp target/chicos-bot.jar dev.chico.bot.source.SpotifyOauthSetup /tmp/spotify-token
+   # append /tmp/spotify-token to ~/.config/chicos-bot/env, then delete it
+   ```
+
+   The future `chicoBot spotify-login` wraps this command. Scopes requested:
+   `playlist-read-private`, `playlist-read-collaborative`, `user-read-private`.
+4. Restart. The bot checks `/v1/me` once at startup and logs whether user mode
+   is enabled. The fallback chain is: Premium user token → client credentials
+   → oEmbed title-only. An expired/invalid token is disabled automatically;
+   re-run the login helper to restore it.
+5. Never commit or share the client secret or refresh token. Rotate the app
+   secret in the Spotify dashboard if it leaks.
 
 ## YouTube login-wall (OAuth, optional)
 
