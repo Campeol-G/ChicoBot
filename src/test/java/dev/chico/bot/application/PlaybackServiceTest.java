@@ -305,14 +305,20 @@ class PlaybackServiceTest {
   }
 
   @Test
-  void spotifyPlaylistLinkIsRefusedWithoutPremiumCredentials() {
+  void spotifyPlaylistNeedsSpotifyCredentials() {
     PlaybackService.PlayResult result =
         service()
             .play(1L, 2L, 3L, "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
             .join();
 
     assertFalse(result.queued());
-    assertTrue(result.message().contains("Premium"));
+    assertTrue(result.message().contains("SPOTIFY_CLIENT_ID"));
+  }
+
+  @Test
+  void spotifyNoticeOnlyOnOembedFallback() {
+    assertEquals("", PlaybackService.spotifyNotice(true));
+    assertTrue(PlaybackService.spotifyNotice(false).contains("partially supported"));
   }
 
   @Test

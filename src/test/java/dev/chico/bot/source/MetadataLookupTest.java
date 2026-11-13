@@ -1,6 +1,7 @@
 package dev.chico.bot.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,7 +9,9 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +41,7 @@ class MetadataLookupTest {
   private HttpServer server;
   private MetadataLookup lookup;
   private MetadataLookup spotifyLookup;
+  private MetadataLookup apiLookup;
   private String baseUrl;
   private final AtomicReference<String> lastOembedQuery = new AtomicReference<>();
 
@@ -112,6 +116,28 @@ class MetadataLookupTest {
       exchange.sendResponseHeaders(302, -1);
       exchange.close();
     });
+    server.createContext("/token", exchange -> {
+      byte[] body = "{\"access_token\":\"tok\",\"expires_in\":3600}"
+          .getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.createContext("/v1/tracks/api-track", exchange -> {
+      byte[] body = "{\"name\":\"API Song\",\"artists\":[{\"name\":\"API Artist\"}]}"
+          .getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.createContext("/v1/tracks/api-fail", exchange -> {
+      byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(500, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     lookup =
@@ -122,6 +148,23 @@ class MetadataLookupTest {
             URI.create(baseUrl + "/lookup"),
             URI.create(baseUrl + "/oembed"),
             Duration.ofSeconds(5));
+    SpotifyClient spotify =
+        new SpotifyClient(
+            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+            Clock.systemUTC(),
+            Duration.ofSeconds(5),
+            "id",
+            "secret",
+            URI.create(baseUrl + "/token"),
+            URI.create(baseUrl + "/v1"));
+    apiLookup =
+        new MetadataLookup(
+            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+            URI.create(baseUrl + "/lookup"),
+            URI.create(baseUrl + "/oembed"),
+            Duration.ofSeconds(5),
+            spotify);
   }
 
   @AfterEach
@@ -271,5 +314,30 @@ class MetadataLookupTest {
         spotifyLookup.spotifyTitle(URI.create("https://example.com/track/x")).get();
 
     assertEquals(MetadataLookup.SpotifyTitle.Kind.FAILED, result.kind());
+  }
+
+  @Test
+  void spotifyApiTrackWinsOverOembed() throws Exception {
+    MetadataLookup.SpotifyTitle result =
+        apiLookup
+            .spotifyTitle(URI.create("https://open.spotify.com/track/api-track"))
+            .get();
+
+    assertEquals(MetadataLookup.SpotifyTitle.Kind.FOUND, result.kind());
+    assertEquals("API Artist - API Song", result.title());
+    assertTrue(result.viaApi());
+    assertNull(lastOembedQuery.get());
+  }
+
+  @Test
+  void spotifyApiFailureFallsBackToOembed() throws Exception {
+    MetadataLookup.SpotifyTitle result =
+        apiLookup
+            .spotifyTitle(URI.create("https://open.spotify.com/track/api-fail"))
+            .get();
+
+    assertEquals(MetadataLookup.SpotifyTitle.Kind.FOUND, result.kind());
+    assertEquals("Never Gonna Give You Up", result.title());
+    assertFalse(result.viaApi());
   }
 }

@@ -26,6 +26,7 @@ public final class MetadataLookup {
   private final URI itunesLookup;
   private final URI spotifyOembed;
   private final Duration timeout;
+  private final SpotifyClient spotify;
 
   public MetadataLookup(URI itunesLookup, Duration timeout) {
     this(itunesLookup, SPOTIFY_OEMBED, timeout);
@@ -37,7 +38,18 @@ public final class MetadataLookup {
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
         itunesLookup,
         spotifyOembed,
-        timeout);
+        timeout,
+        null);
+  }
+
+  public MetadataLookup(URI itunesLookup, Duration timeout, SpotifyClient spotify) {
+    this(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        itunesLookup,
+        SPOTIFY_OEMBED,
+        timeout,
+        spotify);
   }
 
   MetadataLookup(
@@ -46,36 +58,71 @@ public final class MetadataLookup {
       URI itunesLookup,
       URI spotifyOembed,
       Duration timeout) {
+    this(http, spotifyHttp, itunesLookup, spotifyOembed, timeout, null);
+  }
+
+  MetadataLookup(
+      HttpClient http,
+      HttpClient spotifyHttp,
+      URI itunesLookup,
+      URI spotifyOembed,
+      Duration timeout,
+      SpotifyClient spotify) {
     this.http = http;
     this.spotifyHttp = spotifyHttp;
     this.itunesLookup = itunesLookup;
     this.spotifyOembed = spotifyOembed;
     this.timeout = timeout;
+    this.spotify = spotify;
   }
 
   /** Result of a Spotify link lookup: a title, a non-track collection, or a failure. */
-  public record SpotifyTitle(Kind kind, String title) {
+  public record SpotifyTitle(Kind kind, String title, boolean viaApi) {
     public enum Kind {
       FOUND,
       NOT_A_TRACK,
       FAILED
     }
 
-    static SpotifyTitle found(String title) {
-      return new SpotifyTitle(Kind.FOUND, title);
+    static SpotifyTitle found(String title, boolean viaApi) {
+      return new SpotifyTitle(Kind.FOUND, title, viaApi);
     }
 
     static SpotifyTitle notATrack() {
-      return new SpotifyTitle(Kind.NOT_A_TRACK, null);
+      return new SpotifyTitle(Kind.NOT_A_TRACK, null, false);
     }
 
     static SpotifyTitle failed() {
-      return new SpotifyTitle(Kind.FAILED, null);
+      return new SpotifyTitle(Kind.FAILED, null, false);
     }
   }
 
-  /** Resolves a Spotify track link (or spotify.link short link) to its oEmbed title. */
+  /**
+   * Resolves a Spotify track link through the Web API when configured, then
+   * falls back to the public oEmbed title.
+   */
   public CompletableFuture<SpotifyTitle> spotifyTitle(URI uri) {
+    if (spotify == null) {
+      return oembedTitle(uri);
+    }
+    return spotify
+        .resolve(uri)
+        .thenCompose(
+            content -> {
+              if (content.kind() == SpotifyClient.Kind.TRACK
+                  && !content.tracks().isEmpty()) {
+                return CompletableFuture.completedFuture(
+                    SpotifyTitle.found(content.tracks().get(0), true));
+              }
+              if (content.kind() == SpotifyClient.Kind.PLAYLIST) {
+                return CompletableFuture.completedFuture(SpotifyTitle.notATrack());
+              }
+              return oembedTitle(uri);
+            })
+        .exceptionally(failure -> SpotifyTitle.failed());
+  }
+
+  private CompletableFuture<SpotifyTitle> oembedTitle(URI uri) {
     String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
     if (host.equals("spotify.link")) {
       return followShortLink(uri);
@@ -145,7 +192,7 @@ public final class MetadataLookup {
                 String title = JsonBrowser.parse(response.body()).get("title").text();
                 return title == null || title.isBlank()
                     ? SpotifyTitle.failed()
-                    : SpotifyTitle.found(title.strip());
+                    : SpotifyTitle.found(title.strip(), false);
               } catch (Exception e) {
                 return SpotifyTitle.failed();
               }
@@ -153,8 +200,32 @@ public final class MetadataLookup {
         .exceptionally(failure -> SpotifyTitle.failed());
   }
 
+  public boolean spotifyEnabled() {
+    return spotify != null;
+  }
+
+  /** Playlist metadata for the confirm preview (Spotify only). */
+  public CompletableFuture<SpotifyClient.Content> spotifyPlaylist(UrlQuery query) {
+    if (spotify == null || query.source() != Source.SPOTIFY) {
+      return CompletableFuture.completedFuture(SpotifyClient.Content.unsupported());
+    }
+    return spotify.resolve(query.uri());
+  }
+
   /** Resolves a metadata-only link to "artist - title" for text search. */
   public CompletableFuture<Optional<String>> artistTitle(UrlQuery query) {
+    if (query.source() == Source.SPOTIFY) {
+      if (spotify == null) {
+        return CompletableFuture.completedFuture(Optional.empty());
+      }
+      return spotify
+          .resolve(query.uri())
+          .thenApply(
+              content ->
+                  content.kind() == SpotifyClient.Kind.TRACK && !content.tracks().isEmpty()
+                      ? Optional.of(content.tracks().get(0))
+                      : Optional.empty());
+    }
     if (query.source() != Source.APPLE_MUSIC) {
       return CompletableFuture.completedFuture(Optional.empty());
     }

@@ -1,5 +1,8 @@
 package dev.chico.bot.application;
 
+import dev.chico.bot.source.MetadataLookup;
+import dev.chico.bot.source.Source;
+import dev.chico.bot.source.SpotifyClient;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackResolver;
 import dev.chico.bot.source.UrlDecision;
@@ -15,15 +18,34 @@ import java.util.concurrent.CompletableFuture;
 public final class PlaylistFlow {
 
   private final TrackResolver resolver;
+  private final MetadataLookup metadata;
   private final PlaylistSession.Store sessions;
 
   public PlaylistFlow(TrackResolver resolver, Duration ttl, Clock clock) {
+    this(resolver, null, ttl, clock);
+  }
+
+  public PlaylistFlow(
+      TrackResolver resolver, MetadataLookup metadata, Duration ttl, Clock clock) {
     this.resolver = resolver;
+    this.metadata = metadata;
     this.sessions = new PlaylistSession.Store(ttl, clock);
   }
 
   public CompletableFuture<PlaylistPreview> preview(
       long userId, long guildId, UrlDecision.Accepted accepted) {
+    if (accepted.source() == Source.SPOTIFY) {
+      if (metadata == null || !metadata.spotifyEnabled()) {
+        return CompletableFuture.completedFuture(
+            PlaylistPreview.error(
+                "Spotify playlists need SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET; see README."));
+      }
+      return metadata
+          .spotifyPlaylist(new UrlQuery(Source.SPOTIFY, accepted.uri()))
+          .thenApply(
+              content -> fromContent(userId, guildId, content, accepted.singleTrack()))
+          .exceptionally(failure -> PlaylistPreview.error("Search failed. Try again later."));
+    }
     return resolver
         .resolvePlaylist(new UrlQuery(accepted.source(), accepted.uri()))
         .thenApply(
@@ -74,6 +96,30 @@ public final class PlaylistFlow {
 
   public void remove(UUID id) {
     sessions.remove(id);
+  }
+
+  /** Builds the preview/session from already-fetched Spotify content. */
+  public PlaylistPreview fromContent(
+      long userId,
+      long guildId,
+      SpotifyClient.Content content,
+      java.net.URI singleTrackUri) {
+    if (content.transientError()) {
+      return PlaylistPreview.error("Search failed. Try again later.");
+    }
+    if (content.unavailable()) {
+      return PlaylistPreview.error("That playlist is private or unavailable.");
+    }
+    if (content.kind() != SpotifyClient.Kind.PLAYLIST) {
+      return PlaylistPreview.error("Could not read that link. Send the track name instead.");
+    }
+    return create(
+        userId,
+        guildId,
+        content.tracks().stream()
+            .map(title -> new PlaylistItem(title, "", null))
+            .toList(),
+        singleTrackUri);
   }
 
   private PlaylistPreview create(

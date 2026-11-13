@@ -15,6 +15,7 @@ import dev.chico.bot.source.PatchedTvClient;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Ranker;
 import dev.chico.bot.source.Source;
+import dev.chico.bot.source.SpotifyClient;
 import dev.chico.bot.source.TextQuery;
 import dev.chico.bot.source.TrackCandidate;
 import dev.chico.bot.source.TrackLoader;
@@ -46,11 +47,10 @@ public final class PlaybackService {
   private static final int MAX_SEARCH_RESULTS = 10;
   private static final URI ITUNES_LOOKUP = URI.create("https://itunes.apple.com/lookup");
   private static final String SPOTIFY_NOTICE =
-      "Spotify is only partially supported (no Premium API account), so the search uses the"
-          + " title only and may pick a different version.";
+      "Spotify is only partially supported right now (title-only fallback), so the search may"
+          + " pick a different version.";
   private static final String SPOTIFY_COLLECTION_REFUSAL =
-      "Spotify playlists and other collections need a Premium API account, so this bot can't"
-          + " read them. Send the song name or a YouTube link.";
+      "That Spotify link is not a single track. Send a track or playlist link.";
   private static final String UNREADABLE_LINK =
       "Could not read that link. Send the track name instead.";
 
@@ -130,12 +130,37 @@ public final class PlaybackService {
                 clock),
             resolveTimeout,
             config.parallelSearch());
-    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout);
+    SpotifyClient spotify =
+        config.spotifyClientId()
+            .map(
+                id ->
+                    new SpotifyClient(
+                        id,
+                        config.spotifyClientSecret().orElseThrow(),
+                        config.spotifyRefreshToken(),
+                        resolveTimeout))
+            .orElse(null);
+    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify);
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
+            metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
+    if (spotify != null) {
+      spotify
+          .status()
+          .thenAccept(
+              status -> {
+                if (status.premium()) {
+                  log.info("Spotify user mode enabled for {}", status.displayName());
+                } else {
+                  log.info(
+                      "Spotify user mode disabled: {}",
+                      status.error() == null ? "not premium" : status.error());
+                }
+              });
+    }
     this.audioRecovery =
         new AudioRecovery(ranker, this::reloadTrack, this::searchFallback);
     this.votes = new VoteStore(clock);
@@ -171,6 +196,7 @@ public final class PlaybackService {
     this.playlistFlow =
         new PlaylistFlow(
             resolver,
+            metadata,
             Duration.ofSeconds(config.importSessionTtlS()),
             clock);
     this.loaders = Map.of();
@@ -367,9 +393,6 @@ public final class PlaybackService {
       return CompletableFuture.completedFuture(refused(refusalMessage(rejected.reason(), input)));
     }
     UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
-    if (accepted.source() == Source.SPOTIFY) {
-      return playSpotify(guildId, voiceChannelId, userId, accepted);
-    }
     if (accepted.playlist()) {
       return playlistFlow
           .preview(userId, guildId, accepted)
@@ -378,6 +401,9 @@ public final class PlaybackService {
                   preview.sessionId() == null
                       ? refused(preview.error())
                       : new PlayResult(false, "", null, preview));
+    }
+    if (accepted.source() == Source.SPOTIFY) {
+      return playSpotify(guildId, voiceChannelId, userId, accepted);
     }
     UrlQuery query = new UrlQuery(accepted.source(), accepted.uri());
     if (accepted.source() == Source.YOUTUBE || accepted.source() == Source.SOUNDCLOUD) {
@@ -417,7 +443,7 @@ public final class PlaybackService {
                                   played.queued()
                                       ? new PlayResult(
                                           true,
-                                          SPOTIFY_NOTICE,
+                                          spotifyNotice(found.viaApi()),
                                           played.candidate(),
                                           played.playlist())
                                       : played);
@@ -428,9 +454,13 @@ public final class PlaybackService {
                 })
         .exceptionally(
             failure -> {
-              log.warn("Spotify oEmbed failed", failure);
+              log.warn("Spotify metadata failed", failure);
               return refused(UNREADABLE_LINK);
             });
+  }
+
+  static String spotifyNotice(boolean viaApi) {
+    return viaApi ? "" : SPOTIFY_NOTICE;
   }
 
   public String pause(long guildId) {
