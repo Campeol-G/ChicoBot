@@ -1,19 +1,23 @@
 package dev.chico.bot.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,15 +35,49 @@ class SpotifyClientTest {
   private final AtomicInteger tokenRequests = new AtomicInteger();
   private final AtomicInteger expiredCalls = new AtomicInteger();
   private final AtomicInteger limitedCalls = new AtomicInteger();
+  private final AtomicInteger refreshRequests = new AtomicInteger();
+  private final AtomicInteger clientCredentialRequests = new AtomicInteger();
+  private final List<String> refreshTokensSeen = new CopyOnWriteArrayList<>();
+  private final AtomicReference<String> lastMeAuth = new AtomicReference<>();
+  private final AtomicReference<String> lastTrackAuth = new AtomicReference<>();
+  private volatile boolean freeAccount;
+  private volatile boolean failRefresh;
 
   @BeforeEach
   void startServer() throws IOException {
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     server.createContext("/token", exchange -> {
       tokenRequests.incrementAndGet();
-      respond(exchange, 200, "{\"access_token\":\"tok\",\"expires_in\":3600}");
+      String body =
+          new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+      if (body.contains("grant_type=refresh_token")) {
+        refreshRequests.incrementAndGet();
+        refreshTokensSeen.add(String.valueOf(formValue(body, "refresh_token")));
+        if (failRefresh) {
+          respond(exchange, 400, "{}");
+          return;
+        }
+        respond(
+            exchange,
+            200,
+            "{\"access_token\":\"user-token\",\"refresh_token\":\"refresh-2\",\"expires_in\":3600}");
+        return;
+      }
+      clientCredentialRequests.incrementAndGet();
+      respond(exchange, 200, "{\"access_token\":\"client-token\",\"expires_in\":3600}");
     });
-    server.createContext("/v1/tracks/track1", exchange -> respond(exchange, 200, TRACK_JSON));
+    server.createContext("/v1/me", exchange -> {
+      lastMeAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
+      String product = freeAccount ? "free" : "premium";
+      respond(
+          exchange,
+          200,
+          "{\"product\":\"" + product + "\",\"display_name\":\"Chico\"}");
+    });
+    server.createContext("/v1/tracks/track1", exchange -> {
+      lastTrackAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
+      respond(exchange, 200, TRACK_JSON);
+    });
     server.createContext("/v1/tracks/expired", exchange -> {
       if (expiredCalls.getAndIncrement() == 0) {
         respond(exchange, 401, "{}");
@@ -95,6 +133,30 @@ class SpotifyClientTest {
   @AfterEach
   void stopServer() {
     server.stop(0);
+  }
+
+  private SpotifyClient userClient() {
+    return new SpotifyClient(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        Clock.systemUTC(),
+        Duration.ofSeconds(5),
+        "id",
+        "secret",
+        Optional.of("refresh"),
+        URI.create(baseUrl + "/token"),
+        URI.create(baseUrl + "/v1"));
+  }
+
+  private static String formValue(String body, String key) {
+    for (String pair : body.split("&")) {
+      int eq = pair.indexOf('=');
+      if (eq > 0
+          && pair.substring(0, eq).equals(key)
+          && eq + 1 < pair.length()) {
+        return URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+      }
+    }
+    return null;
   }
 
   private static void respond(com.sun.net.httpserver.HttpExchange exchange, int status, String body)
@@ -194,4 +256,74 @@ class SpotifyClientTest {
     assertTrue(!evil.transientError());
   }
 
+  @Test
+  void premiumUserTokenIsUsedAndReported() throws Exception {
+    SpotifyClient user = userClient();
+
+    SpotifyClient.SpotifyStatus status = user.status().get();
+
+    assertTrue(status.configured());
+    assertTrue(status.premium());
+    assertEquals("Chico", status.displayName());
+    assertTrue(user.userModeEnabled());
+    assertEquals(1, refreshRequests.get());
+    assertEquals("Bearer user-token", lastMeAuth.get());
+
+    user.track("track1").get();
+
+    assertEquals("Bearer user-token", lastTrackAuth.get());
+    assertEquals(0, clientCredentialRequests.get());
+  }
+
+  @Test
+  void freeAccountDisablesUserModeAndUsesClientCredentials() throws Exception {
+    freeAccount = true;
+    SpotifyClient user = userClient();
+
+    SpotifyClient.SpotifyStatus status = user.status().get();
+
+    assertFalse(status.premium());
+    assertFalse(user.userModeEnabled());
+
+    user.track("track1").get();
+
+    assertEquals("Bearer client-token", lastTrackAuth.get());
+    assertEquals(1, clientCredentialRequests.get());
+  }
+
+  @Test
+  void failedRefreshFallsBackToClientCredentials() throws Exception {
+    failRefresh = true;
+    SpotifyClient user = userClient();
+
+    SpotifyClient.SpotifyStatus status = user.status().get();
+
+    assertTrue(status.configured());
+    assertFalse(status.premium());
+    assertFalse(status.error().isBlank());
+    assertFalse(user.userModeEnabled());
+
+    user.track("track1").get();
+
+    assertEquals("Bearer client-token", lastTrackAuth.get());
+    assertEquals(1, clientCredentialRequests.get());
+  }
+
+  @Test
+  void rotatedRefreshTokenIsKeptInMemory() throws Exception {
+    SpotifyClient user = userClient();
+
+    user.status().get();
+    user.status().get();
+
+    assertEquals(List.of("refresh", "refresh-2"), refreshTokensSeen);
+  }
+
+  @Test
+  void statusWithoutRefreshTokenIsNotConfigured() throws Exception {
+    SpotifyClient.SpotifyStatus status = client.status().get();
+
+    assertFalse(status.configured());
+    assertFalse(status.premium());
+  }
 }

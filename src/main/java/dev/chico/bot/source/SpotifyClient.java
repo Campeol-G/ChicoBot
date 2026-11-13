@@ -2,6 +2,7 @@ package dev.chico.bot.source;
 
 import com.sedmelluq.discord.lavaplayer.tools.JsonBrowser;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -18,8 +19,9 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Spotify Web API reader (client-credentials). Metadata only: playback always
- * resolves through YouTube/SoundCloud search.
+ * Spotify Web API reader. Metadata only: playback always resolves through
+ * YouTube/SoundCloud search. The client uses client credentials by default and
+ * an optional user refresh token for Premium/private data.
  */
 public final class SpotifyClient {
 
@@ -58,7 +60,13 @@ public final class SpotifyClient {
     }
   }
 
+  /** Health result for the optional user token. */
+  public record SpotifyStatus(
+      boolean configured, boolean premium, String displayName, String error) {
+  }
+
   private static final int PAGE_SIZE = 50;
+  private static final int MAX_PLAYLIST_TRACKS = 500;
 
   private final HttpClient http;
   private final Clock clock;
@@ -70,16 +78,24 @@ public final class SpotifyClient {
 
   private String accessToken;
   private Instant expiresAt = Instant.EPOCH;
+  private boolean accessTokenIsUser;
+  private volatile String currentRefreshToken;
+  private volatile boolean userModeEnabled;
   private CompletableFuture<String> refreshInFlight;
 
+  public SpotifyClient(String clientId, String clientSecret, Duration timeout) {
+    this(clientId, clientSecret, Optional.empty(), timeout);
+  }
+
   public SpotifyClient(
-      String clientId, String clientSecret, Duration timeout) {
+      String clientId, String clientSecret, Optional<String> refreshToken, Duration timeout) {
     this(
         HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
         Clock.systemUTC(),
         timeout,
         clientId,
         clientSecret,
+        refreshToken,
         URI.create("https://accounts.spotify.com/api/token"),
         URI.create("https://api.spotify.com/v1"));
   }
@@ -92,13 +108,71 @@ public final class SpotifyClient {
       String clientSecret,
       URI tokenUri,
       URI apiBase) {
+    this(
+        http,
+        clock,
+        timeout,
+        clientId,
+        clientSecret,
+        Optional.empty(),
+        tokenUri,
+        apiBase);
+  }
+
+  SpotifyClient(
+      HttpClient http,
+      Clock clock,
+      Duration timeout,
+      String clientId,
+      String clientSecret,
+      Optional<String> refreshToken,
+      URI tokenUri,
+      URI apiBase) {
     this.http = http;
     this.clock = clock;
     this.timeout = timeout;
     this.clientId = clientId;
     this.clientSecret = clientSecret;
+    this.currentRefreshToken = refreshToken.orElse(null);
+    this.userModeEnabled = refreshToken.isPresent();
     this.tokenUri = tokenUri;
     this.apiBase = apiBase;
+  }
+
+  public boolean userModeEnabled() {
+    return userModeEnabled;
+  }
+
+  /** Refreshes the user token, checks /v1/me and records Premium status. */
+  public CompletableFuture<SpotifyStatus> status() {
+    if (currentRefreshToken == null) {
+      return CompletableFuture.completedFuture(new SpotifyStatus(false, false, null, null));
+    }
+    return refreshUserToken(currentRefreshToken)
+        .thenCompose(token -> getJsonWithToken("/me", token, false))
+        .thenApply(
+            result -> {
+              if (result.status() != 200) {
+                userModeEnabled = false;
+                invalidateToken();
+                return new SpotifyStatus(
+                    true, false, null, "Spotify profile status " + result.status());
+              }
+              String product = result.body().get("product").text();
+              String displayName = result.body().get("display_name").text();
+              boolean premium = "premium".equalsIgnoreCase(product);
+              userModeEnabled = premium;
+              if (!premium) {
+                invalidateToken();
+              }
+              return new SpotifyStatus(true, premium, displayName, null);
+            })
+        .exceptionally(
+            failure -> {
+              userModeEnabled = false;
+              invalidateToken();
+              return new SpotifyStatus(true, false, null, "Spotify user token refresh failed");
+            });
   }
 
   /** Resolves track/playlist links and spotify.link shorts to metadata. */
@@ -169,7 +243,7 @@ public final class SpotifyClient {
                   tracks.add(title);
                 }
               }
-              if (items.isEmpty()) {
+              if (items.isEmpty() || tracks.size() >= MAX_PLAYLIST_TRACKS) {
                 return CompletableFuture.completedFuture(null);
               }
               long total = json.body().get("total").asLong(-1);
@@ -253,18 +327,19 @@ public final class SpotifyClient {
   }
 
   private CompletableFuture<JsonResult> getJson(String path, boolean retry) {
-    return token()
-        .thenCompose(
-            bearer -> {
-              HttpRequest request =
-                  HttpRequest.newBuilder(URI.create(apiBase + path))
-                      .timeout(timeout)
-                      .header("Authorization", "Bearer " + bearer)
-                      .GET()
-                      .build();
-              return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                  .thenCompose(response -> handle(path, retry, bearer, response));
-            });
+    return token().thenCompose(bearer -> getJsonWithToken(path, bearer, retry));
+  }
+
+  private CompletableFuture<JsonResult> getJsonWithToken(
+      String path, String bearer, boolean retry) {
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create(apiBase + path))
+            .timeout(timeout)
+            .header("Authorization", "Bearer " + bearer)
+            .GET()
+            .build();
+    return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        .thenCompose(response -> handle(path, retry, bearer, response));
   }
 
   private CompletableFuture<JsonResult> handle(
@@ -308,33 +383,83 @@ public final class SpotifyClient {
   private CompletableFuture<String> token() {
     CompletableFuture<String> refresh;
     synchronized (this) {
-      if (accessToken != null && clock.instant().isBefore(expiresAt.minusSeconds(60))) {
+      if (accessToken != null
+          && clock.instant().isBefore(expiresAt.minusSeconds(60))
+          && (!userModeEnabled || accessTokenIsUser)) {
         return CompletableFuture.completedFuture(accessToken);
       }
       if (refreshInFlight != null) {
         return refreshInFlight;
       }
+      if (userModeEnabled && currentRefreshToken != null) {
+        refresh =
+            refreshUserToken(currentRefreshToken)
+                .exceptionallyCompose(
+                    failure -> {
+                      userModeEnabled = false;
+                      invalidateToken();
+                      return requestClientCredentials();
+                    });
+      } else {
+        refresh = requestClientCredentials();
+      }
       refresh =
-          requestToken()
-              .whenComplete(
-                  (token, failure) -> {
-                    synchronized (this) {
-                      refreshInFlight = null;
-                    }
-                  });
+          refresh.whenComplete(
+              (token, failure) -> {
+                synchronized (this) {
+                  refreshInFlight = null;
+                }
+              });
       refreshInFlight = refresh;
     }
     return refresh;
   }
 
-  private void invalidateToken() {
-    synchronized (this) {
-      accessToken = null;
-      expiresAt = Instant.EPOCH;
-    }
+  private CompletableFuture<String> refreshUserToken(String refreshValue) {
+    String body =
+        "grant_type=refresh_token"
+            + "&client_id="
+            + encode(clientId)
+            + "&refresh_token="
+            + encode(refreshValue);
+    HttpRequest request =
+        HttpRequest.newBuilder(tokenUri)
+            .timeout(timeout)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+    return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        .thenApply(
+            response -> {
+              if (response.statusCode() != 200) {
+                throw new CompletionException(
+                    new IllegalStateException("Spotify refresh status " + response.statusCode()));
+              }
+              try {
+                JsonBrowser json = JsonBrowser.parse(response.body());
+                String token = json.get("access_token").text();
+                String rotated = json.get("refresh_token").text();
+                long expiresIn = json.get("expires_in").asLong(3600);
+                if (token == null || token.isBlank()) {
+                  throw new IllegalStateException("Spotify refresh token missing");
+                }
+                synchronized (this) {
+                  currentRefreshToken =
+                      rotated == null || rotated.isBlank() ? refreshValue : rotated;
+                  accessToken = token;
+                  expiresAt = clock.instant().plusSeconds(expiresIn);
+                  accessTokenIsUser = true;
+                }
+                return token;
+              } catch (IllegalStateException e) {
+                throw new CompletionException(e);
+              } catch (Exception e) {
+                throw new CompletionException(e);
+              }
+            });
   }
 
-  private CompletableFuture<String> requestToken() {
+  private CompletableFuture<String> requestClientCredentials() {
     String basic =
         Base64.getEncoder()
             .encodeToString(
@@ -363,6 +488,7 @@ public final class SpotifyClient {
                 synchronized (this) {
                   accessToken = token;
                   expiresAt = clock.instant().plusSeconds(expiresIn);
+                  accessTokenIsUser = false;
                 }
                 return token;
               } catch (IllegalStateException e) {
@@ -371,6 +497,17 @@ public final class SpotifyClient {
                 throw new CompletionException(e);
               }
             });
+  }
+
+  private static String encode(String value) {
+    return URLEncoder.encode(value, StandardCharsets.UTF_8);
+  }
+
+  private void invalidateToken() {
+    synchronized (this) {
+      accessToken = null;
+      expiresAt = Instant.EPOCH;
+    }
   }
 
   /** Internal marker for a private/unavailable playlist. */
