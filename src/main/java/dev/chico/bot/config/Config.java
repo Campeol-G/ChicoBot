@@ -60,6 +60,20 @@ public final class Config {
     return optional("SPOTIFY_REFRESH_TOKEN");
   }
 
+  public Optional<String> appleMusicDeveloperToken() {
+    return optional("APPLE_MUSIC_DEVELOPER_TOKEN");
+  }
+
+  public String appleMusicStorefront() {
+    return env.getOrDefault("APPLE_MUSIC_STOREFRONT", "us")
+        .strip()
+        .toLowerCase(java.util.Locale.ROOT);
+  }
+
+  public Optional<String> appleMusicUserToken() {
+    return optional("APPLE_MUSIC_USER_TOKEN");
+  }
+
   private Optional<String> optional(String key) {
     String raw = env.getOrDefault(key, "").strip();
     return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
@@ -191,6 +205,14 @@ public final class Config {
     if (spotifyRefreshToken().isPresent() && spotifyClientId().isEmpty()) {
       throw new IllegalArgumentException(
           "bad config SPOTIFY_REFRESH_TOKEN: requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET");
+    }
+    if (!appleMusicStorefront().matches("[a-z]{2}")) {
+      throw new IllegalArgumentException(
+          "bad config APPLE_MUSIC_STOREFRONT: use a two-letter storefront such as us or br");
+    }
+    if (appleMusicUserToken().isPresent() && appleMusicDeveloperToken().isEmpty()) {
+      throw new IllegalArgumentException(
+          "bad config APPLE_MUSIC_USER_TOKEN: requires APPLE_MUSIC_DEVELOPER_TOKEN");
     }
   }
 

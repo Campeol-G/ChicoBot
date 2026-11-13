@@ -238,4 +238,32 @@ class ConfigTest {
     assertEquals("secret", config.spotifyClientSecret().orElseThrow());
     assertEquals("refresh", config.spotifyRefreshToken().orElseThrow());
   }
+
+  @Test
+  void appleMusicUserTokenRequiresDeveloperToken() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "APPLE_MUSIC_USER_TOKEN", "user")));
+  }
+
+  @Test
+  void appleMusicStorefrontIsValidated() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "APPLE_MUSIC_STOREFRONT", "brazil")));
+
+    Config config =
+        new Config(
+            Map.of(
+                "DISCORD_TOKEN", "test-token-placeholder",
+                "APPLE_MUSIC_DEVELOPER_TOKEN", "jwt",
+                "APPLE_MUSIC_STOREFRONT", "br"));
+
+    assertEquals("br", config.appleMusicStorefront());
+    assertEquals("jwt", config.appleMusicDeveloperToken().orElseThrow());
+  }
 }
