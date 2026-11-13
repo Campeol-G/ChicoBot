@@ -48,6 +48,23 @@ public final class Config {
     }
   }
 
+  public Optional<String> spotifyClientId() {
+    return optional("SPOTIFY_CLIENT_ID");
+  }
+
+  public Optional<String> spotifyClientSecret() {
+    return optional("SPOTIFY_CLIENT_SECRET");
+  }
+
+  public Optional<String> spotifyRefreshToken() {
+    return optional("SPOTIFY_REFRESH_TOKEN");
+  }
+
+  private Optional<String> optional(String key) {
+    String raw = env.getOrDefault(key, "").strip();
+    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+  }
+
   public String ocrLangs() {
     return env.getOrDefault("OCR_LANGS", "por+eng");
   }
@@ -166,6 +183,14 @@ public final class Config {
     if (ytCipherUrl().isPresent() && ytCipherPassword().isBlank()) {
       throw new IllegalArgumentException(
           "bad config YT_CIPHER_PASSWORD: required when YT_CIPHER_URL is set");
+    }
+    if (spotifyClientId().isPresent() != spotifyClientSecret().isPresent()) {
+      throw new IllegalArgumentException(
+          "bad config SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET: set both or neither");
+    }
+    if (spotifyRefreshToken().isPresent() && spotifyClientId().isEmpty()) {
+      throw new IllegalArgumentException(
+          "bad config SPOTIFY_REFRESH_TOKEN: requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET");
     }
   }
 

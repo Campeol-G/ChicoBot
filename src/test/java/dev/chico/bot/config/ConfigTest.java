@@ -200,4 +200,42 @@ class ConfigTest {
 
     assertTrue(config.ytCipherUrl().isEmpty());
   }
+
+  @Test
+  void spotifyRequiresBothCredentials() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "SPOTIFY_CLIENT_ID", "id")));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "SPOTIFY_CLIENT_SECRET", "secret")));
+  }
+
+  @Test
+  void spotifyRefreshTokenRequiresClientId() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of(
+            "DISCORD_TOKEN", "test-token-placeholder",
+            "SPOTIFY_REFRESH_TOKEN", "refresh")));
+  }
+
+  @Test
+  void spotifyCredentialsAreParsed() {
+    Config config =
+        new Config(
+            Map.of(
+                "DISCORD_TOKEN", "test-token-placeholder",
+                "SPOTIFY_CLIENT_ID", "id",
+                "SPOTIFY_CLIENT_SECRET", "secret",
+                "SPOTIFY_REFRESH_TOKEN", "refresh"));
+
+    assertEquals("id", config.spotifyClientId().orElseThrow());
+    assertEquals("secret", config.spotifyClientSecret().orElseThrow());
+    assertEquals("refresh", config.spotifyRefreshToken().orElseThrow());
+  }
 }
