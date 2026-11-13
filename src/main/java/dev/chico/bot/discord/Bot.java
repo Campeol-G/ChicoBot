@@ -10,6 +10,7 @@ import dev.chico.bot.ocr.ImagePreprocessor;
 import dev.chico.bot.ocr.TesseractCliEngine;
 import dev.chico.bot.parser.DefaultTrackLineParser;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
@@ -83,8 +84,9 @@ public final class Bot {
 
   private void registerCommands(JDA jda) {
     List<CommandData> commands = DiscordCommands.all();
-    if (config.devGuildId().isPresent()) {
-      Guild guild = jda.getGuildById(config.devGuildId().orElseThrow());
+    Optional<Long> devGuildId = config.devGuildId();
+    if (devGuildId.isPresent()) {
+      Guild guild = jda.getGuildById(devGuildId.orElseThrow());
       if (guild == null) {
         // POR QUE: falling through would register dev commands globally.
         throw new IllegalStateException(
@@ -94,15 +96,34 @@ public final class Bot {
           .updateCommands()
           .addCommands(commands)
           .queue(
-              null,
+              ok -> {
+                jda.updateCommands()
+                    .queue(null, failure -> log.warn("global command clear failed", failure));
+                clearGuildCommands(jda, devGuildId);
+              },
               failure ->
                   log.warn("guild command update failed guild={}", guild.getId(), failure));
-      jda.updateCommands()
-          .queue(null, failure -> log.warn("global command clear failed", failure));
       return;
     }
     jda.updateCommands()
         .addCommands(commands)
-        .queue(null, failure -> log.warn("global command update failed", failure));
+        .queue(
+            ok -> clearGuildCommands(jda, devGuildId),
+            failure -> log.warn("global command update failed", failure));
+  }
+
+  private static void clearGuildCommands(JDA jda, Optional<Long> devGuildId) {
+    List<Long> guildIds =
+        CommandRegistration.guildsToClear(
+            jda.getGuilds().stream().map(Guild::getIdLong).toList(), devGuildId);
+    for (long guildId : guildIds) {
+      Guild guild = jda.getGuildById(guildId);
+      if (guild == null) {
+        continue;
+      }
+      guild
+          .updateCommands()
+          .queue(null, failure -> log.warn("guild command clear failed guild={}", guildId, failure));
+    }
   }
 }
