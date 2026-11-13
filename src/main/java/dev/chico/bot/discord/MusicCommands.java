@@ -40,7 +40,7 @@ public final class MusicCommands extends ListenerAdapter {
   }
 
   /** One list, registered per guild in dev and globally otherwise. */
-  private static List<net.dv8tion.jda.api.interactions.commands.build.CommandData> commandData() {
+  static List<net.dv8tion.jda.api.interactions.commands.build.CommandData> commandData() {
     return List.of(
         Commands.slash(PLAY, "Play a song by name or link")
             .addOption(OptionType.STRING, "query", "Song name or audio URL", false),
@@ -57,18 +57,6 @@ public final class MusicCommands extends ListenerAdapter {
         Commands.slash(LOOP, "Loop the current track, a queued position or the queue")
             .addOption(
                 OptionType.STRING, "target", "Queue number, all, or disable", false));
-  }
-
-  static void register(Guild guild) {
-    for (var command : commandData()) {
-      guild.upsertCommand(command).queue();
-    }
-  }
-
-  static void registerGlobal(net.dv8tion.jda.api.JDA jda) {
-    for (var command : commandData()) {
-      jda.upsertCommand(command).queue();
-    }
   }
 
   @Override

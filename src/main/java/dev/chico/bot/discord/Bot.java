@@ -9,31 +9,22 @@ import dev.chico.bot.config.Config;
 import dev.chico.bot.ocr.ImagePreprocessor;
 import dev.chico.bot.ocr.TesseractCliEngine;
 import dev.chico.bot.parser.DefaultTrackLineParser;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.audio.AudioModuleConfig;
 import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.cache.CacheFlag;
-import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Discord client bootstrap. */
 public final class Bot {
 
-  private static final java.util.Set<String> MANAGED_COMMANDS =
-      java.util.Set.of(
-          MusicCommands.PLAY,
-          MusicCommands.PAUSE,
-          MusicCommands.RESUME,
-          MusicCommands.SKIP,
-          MusicCommands.STOP,
-          MusicCommands.QUEUE,
-          MusicCommands.REMOVE,
-          MusicCommands.LEAVE,
-          MusicCommands.NOW_PLAYING,
-          MusicCommands.LOOP,
-          ImageContextMenu.COMMAND,
-          "ping");
+  private static final Logger log = LoggerFactory.getLogger(Bot.class);
 
   private final Config config;
 
@@ -51,7 +42,7 @@ public final class Bot {
             .enableCache(CacheFlag.VOICE_STATE)
             .setAudioModuleConfig(
                 new AudioModuleConfig().withDaveSessionFactory(new JDaveSessionFactory()))
-            .addEventListeners(new PingCommand(config))
+            .addEventListeners(new PingCommand())
             .build();
     jda.awaitReady();
 
@@ -84,12 +75,13 @@ public final class Bot {
     new IdleMonitor(
             jda, playbackRef.get(), config.idleDisconnectS(), config.pausedDisconnectS())
         .start();
-    registerPlay(jda);
+    registerCommands(jda);
 
     return jda;
   }
 
-  private void registerPlay(JDA jda) {
+  private void registerCommands(JDA jda) {
+    List<CommandData> commands = DiscordCommands.all();
     if (config.devGuildId().isPresent()) {
       Guild guild = jda.getGuildById(config.devGuildId().orElseThrow());
       if (guild == null) {
@@ -97,21 +89,19 @@ public final class Bot {
         throw new IllegalStateException(
             "DEV_GUILD_ID does not match a guild this bot is in; refusing to register globally");
       }
-      MusicCommands.register(guild);
-      ImageContextMenu.register(guild);
-      jda.retrieveCommands()
+      guild
+          .updateCommands()
+          .addCommands(commands)
           .queue(
-              globals ->
-                  globals.stream()
-                      .filter(command -> isManaged(command.getName()))
-                      .forEach(command -> command.delete().queue()));
+              null,
+              failure ->
+                  log.warn("guild command update failed guild={}", guild.getId(), failure));
+      jda.updateCommands()
+          .queue(null, failure -> log.warn("global command clear failed", failure));
       return;
     }
-    MusicCommands.registerGlobal(jda);
-    ImageContextMenu.registerGlobal(jda);
-  }
-
-  private static boolean isManaged(String name) {
-    return MANAGED_COMMANDS.contains(name);
+    jda.updateCommands()
+        .addCommands(commands)
+        .queue(null, failure -> log.warn("global command update failed", failure));
   }
 }

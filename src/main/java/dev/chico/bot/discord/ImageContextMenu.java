@@ -7,10 +7,9 @@ import dev.chico.bot.security.RateLimiter;
 import java.time.Clock;
 import java.util.Collections;
 import java.util.List;
-import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.events.interaction.command.MessageContextInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.utils.messages.MessageEditBuilder;
 
@@ -32,12 +31,8 @@ public final class ImageContextMenu extends ListenerAdapter {
     this.cooldownUserS = config.cooldownUserS();
   }
 
-  static void register(Guild guild) {
-    guild.upsertCommand(Commands.message(COMMAND)).queue();
-  }
-
-  static void registerGlobal(JDA jda) {
-    jda.upsertCommand(Commands.message(COMMAND)).queue();
+  static CommandData commandData() {
+    return Commands.message(COMMAND);
   }
 
   @Override
