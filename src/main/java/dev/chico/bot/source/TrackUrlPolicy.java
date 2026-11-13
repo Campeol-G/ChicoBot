@@ -268,7 +268,7 @@ public final class TrackUrlPolicy {
         }
         yield rejected(UrlDecision.Reason.PLAYLIST);
       }
-      case "playlist" -> rejected(UrlDecision.Reason.PLAYLIST);
+      case "playlist" -> new UrlDecision.Accepted(Source.APPLE_MUSIC, uri, true, null);
       default -> rejected(UrlDecision.Reason.UNSUPPORTED_LINK);
     };
   }

@@ -7,6 +7,7 @@ import dev.chico.bot.audio.AudioPlayerSendHandler;
 import dev.chico.bot.audio.GuildMusicManager;
 import dev.chico.bot.config.Config;
 import dev.chico.bot.security.RateLimiter;
+import dev.chico.bot.source.AppleMusicClient;
 import dev.chico.bot.source.CircuitBreaker;
 import dev.chico.bot.source.DefaultTrackResolver;
 import dev.chico.bot.source.LavaplayerTrackLoader;
@@ -140,7 +141,18 @@ public final class PlaybackService {
                         config.spotifyRefreshToken(),
                         resolveTimeout))
             .orElse(null);
-    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify);
+    AppleMusicClient apple =
+        config
+            .appleMusicDeveloperToken()
+            .map(
+                token ->
+                    new AppleMusicClient(
+                        token,
+                        config.appleMusicStorefront(),
+                        config.appleMusicUserToken(),
+                        resolveTimeout))
+            .orElse(null);
+    this.metadata = new MetadataLookup(ITUNES_LOOKUP, resolveTimeout, spotify, apple);
     this.playlistFlow =
         new PlaylistFlow(
             resolver,

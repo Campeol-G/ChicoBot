@@ -1,5 +1,6 @@
 package dev.chico.bot.application;
 
+import dev.chico.bot.source.AppleMusicClient;
 import dev.chico.bot.source.MetadataLookup;
 import dev.chico.bot.source.Source;
 import dev.chico.bot.source.SpotifyClient;
@@ -34,6 +35,18 @@ public final class PlaylistFlow {
 
   public CompletableFuture<PlaylistPreview> preview(
       long userId, long guildId, UrlDecision.Accepted accepted) {
+    if (accepted.source() == Source.APPLE_MUSIC) {
+      if (metadata == null || !metadata.appleEnabled()) {
+        return CompletableFuture.completedFuture(
+            PlaylistPreview.error(
+                "Apple Music playlists need APPLE_MUSIC_DEVELOPER_TOKEN; see README."));
+      }
+      return metadata
+          .applePlaylist(new UrlQuery(Source.APPLE_MUSIC, accepted.uri()))
+          .thenApply(
+              content -> fromAppleContent(userId, guildId, content, accepted.singleTrack()))
+          .exceptionally(failure -> PlaylistPreview.error("Search failed. Try again later."));
+    }
     if (accepted.source() == Source.SPOTIFY) {
       if (metadata == null || !metadata.spotifyEnabled()) {
         return CompletableFuture.completedFuture(
@@ -121,6 +134,30 @@ public final class PlaylistFlow {
         guildId,
         content.tracks().stream()
             .map(title -> new PlaylistItem(title, "", null))
+            .toList(),
+        singleTrackUri);
+  }
+
+  /** Builds the preview/session from already-fetched Apple Music content. */
+  public PlaylistPreview fromAppleContent(
+      long userId,
+      long guildId,
+      AppleMusicClient.Content content,
+      java.net.URI singleTrackUri) {
+    if (content.error() != null) {
+      return PlaylistPreview.error(content.error());
+    }
+    if (content.transientError()) {
+      return PlaylistPreview.error("Search failed. Try again later.");
+    }
+    if (content.unavailable()) {
+      return PlaylistPreview.error("That playlist is private or unavailable.");
+    }
+    return create(
+        userId,
+        guildId,
+        content.tracks().stream()
+            .map(track -> new PlaylistItem(track.title(), track.artist(), null))
             .toList(),
         singleTrackUri);
   }

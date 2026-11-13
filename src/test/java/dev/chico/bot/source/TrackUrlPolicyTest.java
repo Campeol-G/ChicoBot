@@ -266,13 +266,22 @@ class TrackUrlPolicyTest {
   }
 
   @Test
-  void appleMusicCollectionsRejectedAsPlaylist() {
+  void appleMusicAlbumWithoutTrackRejectedAsPlaylist() {
     assertRejected(
         "https://music.apple.com/br/album/whenever-you-need-somebody/1559523357",
         UrlDecision.Reason.PLAYLIST);
-    assertRejected(
-        "https://music.apple.com/br/playlist/topsify/pl.1234567890abcdef",
-        UrlDecision.Reason.PLAYLIST);
+  }
+
+  @Test
+  void appleMusicPlaylistAccepted() {
+    UrlDecision decision =
+        TrackUrlPolicy.classify(
+            "https://music.apple.com/br/playlist/topsify/pl.1234567890abcdef");
+
+    assertTrue(decision instanceof UrlDecision.Accepted);
+    UrlDecision.Accepted accepted = (UrlDecision.Accepted) decision;
+    assertEquals(Source.APPLE_MUSIC, accepted.source());
+    assertTrue(accepted.playlist());
   }
 
   @Test

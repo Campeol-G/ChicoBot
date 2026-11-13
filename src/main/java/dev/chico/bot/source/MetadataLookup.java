@@ -28,6 +28,7 @@ public final class MetadataLookup {
   private final URI spotifyOembed;
   private final Duration timeout;
   private final SpotifyClient spotify;
+  private final AppleMusicClient apple;
 
   public MetadataLookup(URI itunesLookup, Duration timeout) {
     this(itunesLookup, SPOTIFY_OEMBED, timeout);
@@ -40,6 +41,7 @@ public final class MetadataLookup {
         itunesLookup,
         spotifyOembed,
         timeout,
+        null,
         null);
   }
 
@@ -50,7 +52,20 @@ public final class MetadataLookup {
         itunesLookup,
         SPOTIFY_OEMBED,
         timeout,
-        spotify);
+        spotify,
+        null);
+  }
+
+  public MetadataLookup(
+      URI itunesLookup, Duration timeout, SpotifyClient spotify, AppleMusicClient apple) {
+    this(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        itunesLookup,
+        SPOTIFY_OEMBED,
+        timeout,
+        spotify,
+        apple);
   }
 
   MetadataLookup(
@@ -59,7 +74,7 @@ public final class MetadataLookup {
       URI itunesLookup,
       URI spotifyOembed,
       Duration timeout) {
-    this(http, spotifyHttp, itunesLookup, spotifyOembed, timeout, null);
+    this(http, spotifyHttp, itunesLookup, spotifyOembed, timeout, null, null);
   }
 
   MetadataLookup(
@@ -69,12 +84,24 @@ public final class MetadataLookup {
       URI spotifyOembed,
       Duration timeout,
       SpotifyClient spotify) {
+    this(http, spotifyHttp, itunesLookup, spotifyOembed, timeout, spotify, null);
+  }
+
+  MetadataLookup(
+      HttpClient http,
+      HttpClient spotifyHttp,
+      URI itunesLookup,
+      URI spotifyOembed,
+      Duration timeout,
+      SpotifyClient spotify,
+      AppleMusicClient apple) {
     this.http = http;
     this.spotifyHttp = spotifyHttp;
     this.itunesLookup = itunesLookup;
     this.spotifyOembed = spotifyOembed;
     this.timeout = timeout;
     this.spotify = spotify;
+    this.apple = apple;
   }
 
   /** Result of a Spotify link lookup: a title, a non-track collection, or a failure. */
@@ -203,6 +230,19 @@ public final class MetadataLookup {
 
   public boolean spotifyEnabled() {
     return spotify != null;
+  }
+
+  public boolean appleEnabled() {
+    return apple != null;
+  }
+
+  /** Apple Music playlist metadata for the confirm preview. */
+  public CompletableFuture<AppleMusicClient.Content> applePlaylist(UrlQuery query) {
+    if (apple == null || query.source() != Source.APPLE_MUSIC) {
+      return CompletableFuture.completedFuture(
+          AppleMusicClient.Content.error("Apple Music playlists are not configured."));
+    }
+    return apple.resolvePlaylist(query.uri());
   }
 
   /** Raw Spotify content (track, playlist or unsupported) for play routing. */

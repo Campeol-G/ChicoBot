@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.chico.bot.source.AppleMusicClient;
 import dev.chico.bot.source.PlayQuery;
 import dev.chico.bot.source.Source;
 import dev.chico.bot.source.SpotifyClient;
@@ -131,6 +132,44 @@ class PlaylistFlowTest {
 
     assertNull(preview.sessionId());
     assertTrue(preview.error().contains("Could not read"));
+  }
+
+  @Test
+  void applePlaylistContentCreatesSession() {
+    PlaylistPreview preview =
+        flow()
+            .fromAppleContent(
+                1L,
+                2L,
+                new AppleMusicClient.Content(
+                    List.of(
+                        new AppleMusicClient.Track("One", "Artist A"),
+                        new AppleMusicClient.Track("Two", "Artist B")),
+                    false,
+                    false),
+                null);
+
+    assertNull(preview.error());
+    assertEquals(2, preview.items().size());
+    assertEquals("One", preview.items().get(0).title());
+  }
+
+  @Test
+  void applePlaylistErrorKeepsMessage() {
+    PlaylistPreview preview =
+        flow()
+            .fromAppleContent(
+                1L,
+                2L,
+                new AppleMusicClient.Content(
+                    List.of(),
+                    false,
+                    false,
+                    "Apple Music developer token expired; generate a new one."),
+                null);
+
+    assertEquals(
+        "Apple Music developer token expired; generate a new one.", preview.error());
   }
 
   @Test

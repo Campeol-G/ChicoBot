@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -42,6 +43,7 @@ class MetadataLookupTest {
   private MetadataLookup lookup;
   private MetadataLookup spotifyLookup;
   private MetadataLookup apiLookup;
+  private MetadataLookup appleLookup;
   private String baseUrl;
   private final AtomicReference<String> lastOembedQuery = new AtomicReference<>();
 
@@ -138,6 +140,22 @@ class MetadataLookupTest {
       exchange.getResponseBody().write(body);
       exchange.close();
     });
+    server.createContext("/v1/catalog/us/playlists/pl.abc", exchange -> {
+      byte[] body =
+          """
+          {"data":[{"id":"pl.abc","type":"playlists","relationships":{"tracks":{
+            "data":[
+              {"id":"1","type":"songs","attributes":{"name":"Song One","artistName":"Artist A"}},
+              {"id":"2","type":"songs","attributes":{"name":"Song Two","artistName":"Artist B"}}
+            ],"next":null
+          }}}]}
+          """
+              .getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     lookup =
@@ -165,6 +183,29 @@ class MetadataLookupTest {
             URI.create(baseUrl + "/oembed"),
             Duration.ofSeconds(5),
             spotify);
+    AppleMusicClient apple =
+        new AppleMusicClient(
+            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+            URI.create(baseUrl),
+            jwt(System.currentTimeMillis() / 1000 + 3600),
+            "us",
+            Optional.empty(),
+            Duration.ofSeconds(5));
+    appleLookup =
+        new MetadataLookup(
+            URI.create(baseUrl + "/lookup"), Duration.ofSeconds(5), null, apple);
+  }
+
+  private static String jwt(long expiresAt) {
+    Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+    String header =
+        encoder.encodeToString(
+            "{\"alg\":\"ES256\",\"kid\":\"key\"}".getBytes(StandardCharsets.UTF_8));
+    String payload =
+        encoder.encodeToString(
+            ("{\"iss\":\"team\",\"iat\":1,\"exp\":" + expiresAt + "}")
+                .getBytes(StandardCharsets.UTF_8));
+    return header + "." + payload + ".signature";
   }
 
   @AfterEach
@@ -339,5 +380,19 @@ class MetadataLookupTest {
     assertEquals(MetadataLookup.SpotifyTitle.Kind.FOUND, result.kind());
     assertEquals("Never Gonna Give You Up", result.title());
     assertFalse(result.viaApi());
+  }
+
+  @Test
+  void applePlaylistUsesAppleClient() throws Exception {
+    AppleMusicClient.Content content =
+        appleLookup
+            .applePlaylist(
+                new UrlQuery(
+                    Source.APPLE_MUSIC,
+                    URI.create("https://music.apple.com/us/playlist/x/pl.abc")))
+            .get();
+
+    assertEquals(2, content.tracks().size());
+    assertEquals("Song One", content.tracks().get(0).title());
   }
 }
