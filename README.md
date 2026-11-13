@@ -10,10 +10,12 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
 
 ## Features
 
-- `/play <name or link>`, `/pause`, `/resume`, `/skip [target]`, `/stop`,
-  `/queue`, `/remove <target>`, `/leave`, `/nowplaying`, `/loop [target]`,
-  `/ping`.
+- `/play <name or link>`, `/pause`, `/skip [target]`, `/stop`, `/queue`,
+  `/remove <target>`, `/exit`, `/nowplaying`, `/loop [target]`, `/unloop`,
+  `/help`, `/ping`.
 - `@bot p <query>` in a channel works like `/play`; bare `/play` unpauses.
+- `/help` posts an ephemeral guide to the commands and the import flow.
+- `/unloop` stops any loop; `/loop disable` still works.
 - `/queue` posts one live queue message that updates on every change.
 - Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 10 images):
   it reads the tracks with local OCR, shows a preview with **Play all**,
@@ -33,7 +35,7 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
   error.
 - Skipping/removing someone else's track in a call with 3+ humans needs a
   majority vote (`Skipped 1/2.`); your own track is always immediate. `/stop`
-  and `/leave` stay free for anyone.
+  and `/exit` stay free for anyone.
 
 ## Requirements
 
