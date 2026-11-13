@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ class AppleMusicClientTest {
   private String baseUrl;
   private final List<String> requestedPaths = new CopyOnWriteArrayList<>();
   private final AtomicInteger limitedCalls = new AtomicInteger();
+  private final AtomicReference<String> lastUserToken = new AtomicReference<>();
 
   @BeforeEach
   void startServer() throws IOException {
@@ -71,6 +73,11 @@ class AppleMusicClientTest {
       }
     });
     server.createContext("/v1/catalog/us/playlists/pl.broken", exchange -> respond(exchange, 500, "{}"));
+    server.createContext("/v1/me/library/playlists/p.lib", exchange -> {
+      requestedPaths.add(exchange.getRequestURI().getPath());
+      lastUserToken.set(exchange.getRequestHeaders().getFirst("Music-User-Token"));
+      respond(exchange, 200, playlistJson());
+    });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
   }
@@ -87,6 +94,16 @@ class AppleMusicClientTest {
         jwt(System.currentTimeMillis() / 1000 + 3600),
         storefront,
         Optional.empty(),
+        Duration.ofSeconds(5));
+  }
+
+  private AppleMusicClient userClient() {
+    return new AppleMusicClient(
+        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
+        URI.create(baseUrl),
+        jwt(System.currentTimeMillis() / 1000 + 3600),
+        "us",
+        Optional.of("user-token"),
         Duration.ofSeconds(5));
   }
 
@@ -208,5 +225,28 @@ class AppleMusicClientTest {
             .get();
 
     assertTrue(content.transientError());
+  }
+
+  @Test
+  void libraryPlaylistRequiresUserToken() throws Exception {
+    AppleMusicClient.Content content =
+        client("us")
+            .resolvePlaylist(URI.create("https://music.apple.com/library/playlist/p.lib"))
+            .get();
+
+    assertTrue(content.error().contains("APPLE_MUSIC_USER_TOKEN"));
+    assertTrue(requestedPaths.isEmpty());
+  }
+
+  @Test
+  void libraryPlaylistUsesTheUserTokenHeader() throws Exception {
+    AppleMusicClient.Content content =
+        userClient()
+            .resolvePlaylist(URI.create("https://music.apple.com/library/playlist/p.lib"))
+            .get();
+
+    assertEquals(2, content.tracks().size());
+    assertEquals("user-token", lastUserToken.get());
+    assertEquals("/v1/me/library/playlists/p.lib", requestedPaths.get(0));
   }
 }

@@ -104,8 +104,16 @@ public final class AppleMusicClient {
     }
     Ref ref = parsed.orElseThrow();
     if (ref.library()) {
-      return CompletableFuture.completedFuture(
-          Content.error("Apple Music library playlists need APPLE_MUSIC_USER_TOKEN."));
+      if (userToken.isEmpty()) {
+        return CompletableFuture.completedFuture(
+            Content.error("Apple Music library playlists need APPLE_MUSIC_USER_TOKEN."));
+      }
+      String path =
+          "/v1/me/library/playlists/"
+              + ref.id()
+              + "?include=tracks&limit="
+              + PAGE_SIZE;
+      return fetch(path, new ArrayList<>());
     }
     String path =
         "/v1/catalog/"
