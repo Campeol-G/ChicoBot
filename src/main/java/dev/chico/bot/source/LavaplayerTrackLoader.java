@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit;
 /** Loads candidates through Lavaplayer, one instance per source. */
 public final class LavaplayerTrackLoader implements TrackLoader {
 
+  private static final int MAX_PLAYLIST_TRACKS = 500;
+
   private final Source source;
   private final AudioPlayerManager manager;
   private final int maxSearchResults;
@@ -119,7 +121,7 @@ public final class LavaplayerTrackLoader implements TrackLoader {
           @Override
           public void playlistLoaded(AudioPlaylist playlist) {
             List<TrackCandidate> candidates = new ArrayList<>();
-            for (AudioTrack track : playlist.getTracks()) {
+            for (AudioTrack track : cappedTracks(playlist.getTracks())) {
               candidates.add(candidate(track, uri));
             }
             future.complete(List.copyOf(candidates));
@@ -136,6 +138,10 @@ public final class LavaplayerTrackLoader implements TrackLoader {
           }
         });
     return future.orTimeout(loadTimeout.toMillis(), TimeUnit.MILLISECONDS);
+  }
+
+  static List<AudioTrack> cappedTracks(List<AudioTrack> tracks) {
+    return tracks.subList(0, Math.min(tracks.size(), MAX_PLAYLIST_TRACKS));
   }
 
   private TrackCandidate candidate(AudioTrack track, URI fallbackUri) {

@@ -115,6 +115,14 @@ class LavaplayerTrackLoaderTest {
   }
 
   @Test
+  void playlistTracksAreCappedAtFiveHundred() {
+    java.util.List<com.sedmelluq.discord.lavaplayer.track.AudioTrack> tracks =
+        new java.util.ArrayList<>(java.util.Collections.nCopies(600, (com.sedmelluq.discord.lavaplayer.track.AudioTrack) null));
+
+    assertEquals(500, LavaplayerTrackLoader.cappedTracks(tracks).size());
+  }
+
+  @Test
   @Tag("integration")
   void youtubeSearchAndUrlLoad() throws Exception {
     DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
