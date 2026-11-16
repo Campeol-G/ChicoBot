@@ -3,6 +3,11 @@
 A personal Discord music bot in Java. It plays YouTube and SoundCloud tracks
 and imports tracks from playlist screenshots with local OCR.
 
+Version v1.3. `chicoBot` handles first-run setup, the bot plays by link or
+search, keeps a per-server queue with a live queue message, confirms playlists
+before queueing, imports YouTube Music and Spotify screenshots with local
+Tesseract OCR, and reads Spotify and Apple Music metadata with safe fallbacks.
+
 ## Contents
 
 - [Features](#features)
@@ -310,6 +315,7 @@ the launcher.
 - Apple Music track IDs must be numeric.
 - The OAuth helpers refuse a symbolic link as the token file.
 - A loop is cleared when its track ends and playback cannot continue.
+- A voice move away from listeners is refused at the moment of the connection.
 
 ## License and disclaimer
 
