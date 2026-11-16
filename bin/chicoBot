@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# chicoBot: first-run setup and foreground launcher. Ctrl+C stops the bot.
+set -euo pipefail
+
+REPO_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd -P)"
+ENV_FILE="${CHICOS_BOT_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/chicos-bot/env}"
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+JAR="$REPO_ROOT/target/chicos-bot.jar"
+CONFIG_DIR="$(dirname -- "$ENV_FILE")"
+JAVA_ARGS=(--enable-native-access=ALL-UNNAMED -Djava.awt.headless=true)
+
+usage() {
+  cat <<'EOF'
+chicoBot — chicos-bot setup and foreground launcher
+
+Usage:
+  chicoBot            Start the bot (runs setup on the first run)
+  chicoBot start      Start the bot
+  chicoBot setup      Run or re-run the setup wizard
+  chicoBot check      Check prerequisites without changing anything
+  chicoBot help       Show this help
+
+The bot runs in the foreground. Press Ctrl+C to stop it.
+No daemon or `end` command: for background operation use the systemd unit.
+EOF
+}
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+java_major() {
+  local line
+  line="$(java -version 2>&1 | head -n 1)"
+  sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' <<<"$line"
+}
+
+check_java() {
+  have java || { echo "missing: java"; return 1; }
+  local major
+  major="$(java_major)"
+  if [[ -z "$major" || "$major" -lt 25 ]]; then
+    echo "java 25+ required (found ${major:-unknown})"
+    return 1
+  fi
+  echo "java $major"
+}
+
+check_maven() {
+  if ! have mvn; then
+    echo "missing: maven (needed to build the jar)"
+    return 1
+  fi
+  echo "maven $(mvn -version 2>/dev/null | head -n 1 | awk '{print $3}')"
+}
+
+check_tesseract() {
+  if ! have tesseract; then
+    echo "missing: tesseract (image import will not work)"
+    return 1
+  fi
+  local langs
+  langs="$(tesseract --list-langs 2>/dev/null || true)"
+  local language
+  for language in por eng; do
+    if ! grep -qx "$language" <<<"$langs"; then
+      echo "missing tesseract language: $language"
+      return 1
+    fi
+  done
+  echo "tesseract por+eng"
+}
+
+check_env() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "missing env: $ENV_FILE"
+    return 1
+  fi
+  local mode
+  mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || true)"
+  if [[ "$mode" != "600" ]]; then
+    echo "env mode is ${mode:-unknown}, expected 600"
+    return 1
+  fi
+  if ( set -a; . "$ENV_FILE"; [[ -n "${DISCORD_TOKEN:-}" ]] ); then
+    echo "env token set"
+  else
+    echo "DISCORD_TOKEN missing in $ENV_FILE"
+    return 1
+  fi
+}
+
+check_jar() {
+  if [[ -f "$JAR" ]]; then
+    echo "jar present"
+  else
+    echo "missing jar: $JAR"
+    return 1
+  fi
+}
+
+check_cipher() {
+  local url=""
+  if [[ -f "$ENV_FILE" ]]; then
+    url="$( set -a; . "$ENV_FILE"; printf '%s' "${YT_CIPHER_URL:-}" )"
+  fi
+  if [[ -z "$url" ]]; then
+    echo "cipher not configured (optional; YouTube may fail)"
+    return 0
+  fi
+  if ! have curl; then
+    echo "curl missing; cannot check cipher"
+    return 0
+  fi
+  if curl -s -m 3 -o /dev/null "$url/"; then
+    echo "cipher reachable: $url"
+  else
+    echo "warning: cipher not reachable: $url"
+  fi
+}
+
+check() {
+  local failed=0
+  check_java || failed=1
+  check_maven || failed=1
+  check_env || failed=1
+  check_jar || failed=1
+  check_tesseract || true
+  check_cipher || true
+  if [[ "$failed" -ne 0 ]]; then
+    echo "check failed"
+    return 1
+  fi
+  echo "check passed"
+}
+
+build_jar() {
+  have mvn || die "Maven is required to build the jar"
+  echo "building $JAR..."
+  ( cd "$REPO_ROOT" && mvn -q package -DskipTests )
+}
+
+ensure_env() {
+  [[ -f "$ENV_FILE" ]] && ( set -a; . "$ENV_FILE"; [[ -n "${DISCORD_TOKEN:-}" ]] )
+}
+
+setup() {
+  die "setup wizard is not implemented yet"
+}
+
+start() {
+  if ! ensure_env; then
+    [[ -t 0 ]] || die "setup required: run 'chicoBot setup' in a terminal"
+    setup
+  fi
+  [[ -f "$JAR" ]] || build_jar
+  exec "$REPO_ROOT/run.sh"
+}
+
+main() {
+  case "${1:-start}" in
+    start) start ;;
+    setup) setup ;;
+    check) check ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
