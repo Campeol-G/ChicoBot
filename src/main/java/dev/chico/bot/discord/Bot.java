@@ -68,7 +68,8 @@ public final class Bot {
             new TesseractCliEngine(
                 config.ocrLangs(), java.time.Duration.ofMillis(config.ocrTimeoutMs())),
             new DefaultTrackLineParser(),
-            new ImagePreprocessor(config.imgMaxPixels()),
+            new ImagePreprocessor(
+                config.imgMaxPixels(), false, config.ocrBinarizeDark()),
             sessions);
     jda.addEventListener(new MessageListener(playbackRef.get(), importFlow, config));
     jda.addEventListener(new PreviewButtons(sessions, playbackRef.get(), config));

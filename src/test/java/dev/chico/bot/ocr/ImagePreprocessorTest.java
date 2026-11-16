@@ -46,6 +46,67 @@ class ImagePreprocessorTest {
   }
 
   @Test
+  void darkImageIsBinarizedByDefault() throws Exception {
+    byte[] processed =
+        new ImagePreprocessor(4096L * 4096L)
+            .preprocess(pngOf(image(10, 128, 255)));
+
+    assertOnlyBinary(ImageIO.read(new ByteArrayInputStream(processed)));
+  }
+
+  @Test
+  void whiteImageKeepsGrayscaleByDefault() throws Exception {
+    byte[] processed =
+        new ImagePreprocessor(4096L * 4096L)
+            .preprocess(pngOf(image(245, 128, 0)));
+
+    assertHasMidtone(ImageIO.read(new ByteArrayInputStream(processed)));
+  }
+
+  @Test
+  void explicitBinarizeStillAppliesToWhiteImages() throws Exception {
+    byte[] processed =
+        new ImagePreprocessor(4096L * 4096L, true)
+            .preprocess(pngOf(image(245, 128, 0)));
+
+    assertOnlyBinary(ImageIO.read(new ByteArrayInputStream(processed)));
+  }
+
+  private static BufferedImage image(int background, int midtone, int foreground) {
+    BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = image.createGraphics();
+    graphics.setColor(new Color(background, background, background));
+    graphics.fillRect(0, 0, 100, 100);
+    graphics.setColor(new Color(midtone, midtone, midtone));
+    graphics.fillRect(10, 10, 40, 40);
+    graphics.setColor(new Color(foreground, foreground, foreground));
+    graphics.fillRect(60, 60, 20, 20);
+    graphics.dispose();
+    return image;
+  }
+
+  private static void assertOnlyBinary(BufferedImage image) {
+    for (int y = 0; y < image.getHeight(); y++) {
+      for (int x = 0; x < image.getWidth(); x++) {
+        int red = (image.getRGB(x, y) >> 16) & 0xFF;
+        assertTrue(red == 0 || red == 255, "non-binary pixel " + red + " at " + x + "," + y);
+      }
+    }
+  }
+
+  private static void assertHasMidtone(BufferedImage image) {
+    for (int y = 0; y < image.getHeight(); y++) {
+      for (int x = 0; x < image.getWidth(); x++) {
+        int red = (image.getRGB(x, y) >> 16) & 0xFF;
+        if (red > 0 && red < 255) {
+          return;
+        }
+      }
+    }
+    throw new AssertionError("expected at least one midtone pixel");
+  }
+
+  @Test
   void forgedHeaderDimensionsRejectedBeforeDecoding() {
     byte[] forged = forgedPng(20000, 20000);
 

@@ -60,6 +60,17 @@ class ConfigTest {
   }
 
   @Test
+  void ocrBinarizeDarkDefaultsOnAndCanBeDisabled() {
+    assertTrue(new Config(envWithToken()).ocrBinarizeDark());
+    assertFalse(
+        new Config(Map.of("DISCORD_TOKEN", "test", "OCR_BINARIZE_DARK", "false"))
+            .ocrBinarizeDark());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new Config(Map.of("DISCORD_TOKEN", "test", "OCR_BINARIZE_DARK", "maybe")));
+  }
+
+  @Test
   void envOverridesDefaults() {
     Config config = new Config(Map.of(
         "DISCORD_TOKEN", "test-token-placeholder",

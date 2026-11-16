@@ -20,14 +20,20 @@ public final class ImagePreprocessor {
 
   private final long maxPixels;
   private final boolean binarize;
+  private final boolean binarizeDark;
 
   public ImagePreprocessor(long maxPixels) {
-    this(maxPixels, false);
+    this(maxPixels, false, true);
   }
 
   public ImagePreprocessor(long maxPixels, boolean binarize) {
+    this(maxPixels, binarize, true);
+  }
+
+  public ImagePreprocessor(long maxPixels, boolean binarize, boolean binarizeDark) {
     this.maxPixels = maxPixels;
     this.binarize = binarize;
+    this.binarizeDark = binarizeDark;
     ImageIO.setUseCache(false);
   }
 
@@ -46,7 +52,10 @@ public final class ImagePreprocessor {
     BufferedImage scaled = rescale(flat);
     BufferedImage gray = grayscale(scaled);
     BufferedImage inverted = invertIfDark(gray);
-    BufferedImage finalImage = binarize ? otsu(inverted) : inverted;
+    // POR QUE: Otsu helps dark prints but regressed the white golden set.
+    boolean dark = inverted != gray;
+    BufferedImage finalImage =
+        (binarize || (binarizeDark && dark)) ? otsu(inverted) : inverted;
     return encode(finalImage);
   }
 

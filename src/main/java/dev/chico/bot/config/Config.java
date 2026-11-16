@@ -88,6 +88,10 @@ public final class Config {
     return parseInt("OCR_TIMEOUT_MS", 8000);
   }
 
+  public boolean ocrBinarizeDark() {
+    return parseBoolean("OCR_BINARIZE_DARK", true);
+  }
+
   public int ocrMaxConcurrency() {
     return parseInt("OCR_MAX_CONCURRENCY", 2);
   }
@@ -195,6 +199,7 @@ public final class Config {
       throw new IllegalArgumentException("bad config MATCH_THRESHOLD: must be within 0.0..1.0");
     }
     parallelSearch();
+    ocrBinarizeDark();
     if (spotifyClientId().isPresent() != spotifyClientSecret().isPresent()) {
       throw new IllegalArgumentException(
           "bad config SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET: set both or neither");
@@ -253,6 +258,21 @@ public final class Config {
     } catch (NumberFormatException e) {
       throw new IllegalArgumentException("bad config " + key + ": not a number", e);
     }
+  }
+
+  private boolean parseBoolean(String key, boolean fallback) {
+    String raw = env.get(key);
+    if (raw == null || raw.isBlank()) {
+      return fallback;
+    }
+    String value = raw.strip();
+    if (value.equalsIgnoreCase("true")) {
+      return true;
+    }
+    if (value.equalsIgnoreCase("false")) {
+      return false;
+    }
+    throw new IllegalArgumentException("bad config " + key + ": must be true or false");
   }
 
   private double parseDouble(String key, double fallback) {
