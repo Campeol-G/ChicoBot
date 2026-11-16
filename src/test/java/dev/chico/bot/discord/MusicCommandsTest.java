@@ -1,5 +1,6 @@
 package dev.chico.bot.discord;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,5 +21,20 @@ class MusicCommandsTest {
     assertFalse(MusicCommands.isRefusal("Skipped to Beta."));
     assertFalse(MusicCommands.isRefusal("Loop disabled."));
     assertFalse(MusicCommands.isRefusal("Removed Beta (position 2)."));
+  }
+
+  @Test
+  void clampQueryKeepsMaxLengthQuery() {
+    String query = "a".repeat(MusicCommands.MAX_QUERY_LENGTH);
+
+    assertEquals(query, MusicCommands.clampQuery(query));
+  }
+
+  @Test
+  void clampQueryTruncatesLongQuery() {
+    String query = "a".repeat(MusicCommands.MAX_QUERY_LENGTH + 100);
+
+    assertEquals(
+        "a".repeat(MusicCommands.MAX_QUERY_LENGTH), MusicCommands.clampQuery(query));
   }
 }

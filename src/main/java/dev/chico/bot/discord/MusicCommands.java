@@ -12,6 +12,7 @@ import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,7 @@ public final class MusicCommands extends ListenerAdapter {
   static final String NOW_PLAYING = "nowplaying";
   static final String LOOP = "loop";
   static final String UNLOOP = "unloop";
+  static final int MAX_QUERY_LENGTH = 500;
 
   private static final Logger log = LoggerFactory.getLogger(MusicCommands.class);
 
@@ -43,7 +45,9 @@ public final class MusicCommands extends ListenerAdapter {
   static List<net.dv8tion.jda.api.interactions.commands.build.CommandData> commandData() {
     return List.of(
         Commands.slash(PLAY, "Play a song by name or link")
-            .addOption(OptionType.STRING, "query", "Song name or audio URL", false),
+            .addOptions(
+                new OptionData(OptionType.STRING, "query", "Song name or audio URL", false)
+                    .setMaxLength(MAX_QUERY_LENGTH)),
         Commands.slash(PAUSE, "Pause the current track (use /play to resume)"),
         Commands.slash(SKIP, "Skip the current track or jump to a queued one")
             .addOption(OptionType.STRING, "target", "Queue number or name", false),
@@ -261,6 +265,13 @@ public final class MusicCommands extends ListenerAdapter {
     }
     var embed = isRefusal(message) ? Embeds.error(message) : Embeds.status(message);
     event.replyEmbeds(embed).queue(null, err -> log.warn("reply failed", err));
+  }
+
+  static String clampQuery(String query) {
+    if (query.length() <= MAX_QUERY_LENGTH) {
+      return query;
+    }
+    return query.substring(0, MAX_QUERY_LENGTH);
   }
 
   /** Service replies are strings; keep the refusal set in one place. */

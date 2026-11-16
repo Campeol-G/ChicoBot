@@ -63,6 +63,7 @@ public final class MessageListener extends ListenerAdapter {
   }
 
   private void onPlayQuery(MessageReceivedEvent event, String query) {
+    query = MusicCommands.clampQuery(query);
     if (query.isEmpty()) {
       event
           .getMessage()
