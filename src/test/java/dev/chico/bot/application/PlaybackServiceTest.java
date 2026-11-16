@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.sedmelluq.discord.lavaplayer.player.AudioConfiguration;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManager;
@@ -1073,6 +1074,21 @@ class PlaybackServiceTest {
     assertEquals(
         List.of("Beta"),
         service.queueView(1L).queued().stream().map(TrackCandidate::title).toList());
+  }
+
+  @Test
+  void audioQualityUsesHighResamplingAndBuffer() {
+    DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
+
+    PlaybackService.configureAudio(manager);
+
+    assertEquals(
+        AudioConfiguration.ResamplingQuality.HIGH,
+        manager.getConfiguration().getResamplingQuality());
+    assertEquals(
+        AudioConfiguration.OPUS_QUALITY_MAX,
+        manager.getConfiguration().getOpusEncodingQuality());
+    assertEquals(1000, manager.getFrameBufferDuration());
   }
 
   @Test

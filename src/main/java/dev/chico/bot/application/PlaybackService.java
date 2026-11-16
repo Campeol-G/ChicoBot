@@ -1,5 +1,6 @@
 package dev.chico.bot.application;
 
+import com.sedmelluq.discord.lavaplayer.player.AudioConfiguration;
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager;
 import com.sedmelluq.discord.lavaplayer.source.soundcloud.SoundCloudAudioSourceManager;
@@ -72,7 +73,22 @@ public final class PlaybackService {
   public record QueueView(Optional<TrackCandidate> current, List<TrackCandidate> queued) {
   }
 
-  private final AudioPlayerManager playerManager = new DefaultAudioPlayerManager();
+  private static AudioPlayerManager createPlayerManager() {
+    DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
+    configureAudio(manager);
+    return manager;
+  }
+
+  /** Pins v1.2 audio quality instead of relying on library defaults. */
+  static void configureAudio(AudioPlayerManager manager) {
+    manager
+        .getConfiguration()
+        .setResamplingQuality(AudioConfiguration.ResamplingQuality.HIGH);
+    manager.getConfiguration().setOpusEncodingQuality(AudioConfiguration.OPUS_QUALITY_MAX);
+    manager.setFrameBufferDuration(1000);
+  }
+
+  private final AudioPlayerManager playerManager = createPlayerManager();
   private final Map<Long, GuildMusicManager> managers = new ConcurrentHashMap<>();
   private final VoiceConnector connector;
   private final TrackResolver resolver;

@@ -144,6 +144,7 @@ Only `DISCORD_TOKEN` is required.
 | `OCR_LANGS` | `por+eng` | Tesseract languages. |
 | `OCR_TIMEOUT_MS` | `8000` | Timeout per OCR run. |
 | `OCR_MAX_CONCURRENCY` | `2` | Simultaneous OCR processes. |
+| `OCR_BINARIZE_DARK` | `false` | Opt-in Otsu for dark prints; the v1.2 count sweep found no default gain. |
 | `IMG_MAX_BYTES` | `8388608` | Max image size (8 MB). |
 | `IMG_MAX_PIXELS` | `16777216` | Max pixels (4096×4096). |
 | `IMPORT_MAX_TRACKS` | `50` | Tracks per import (remove menu shows the first 25). |
@@ -281,6 +282,11 @@ a match-gated SoundCloud equivalent; if neither plays it skips and posts
 `Skipped (unplayable): <title>.` The audio health counter logs a warning when
 more than 10% of a 60 s window is silent outside track transitions.
 
+Audio quality is pinned: Discord Opus at encoding quality 10, resampling HIGH,
+and a 1000 ms frame buffer. The health log's `gapPct`, `maxConsecNull` and
+`maxIntervalMs` are the measurement to compare sessions; the 1 s buffer adds
+up to a second of latency in exchange for resilience.
+
 ## Offline OCR check
 
 ```bash
@@ -290,7 +296,16 @@ java --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true \
 ```
 
 Prints one `title - artist` line per detected track. Method and recall
-numbers: `docs/ocr-evaluation.md`.
+numbers: `docs/ocr-evaluation.md`. For a version-to-version count comparison:
+
+```bash
+scripts/ocr-eval.sh <references-dir>            # baseline
+scripts/ocr-eval.sh <references-dir> --dark-otsu # candidate
+```
+
+The script prints counts only, never titles. `OCR_BINARIZE_DARK=true` enables
+the opt-in dark-print Otsu; it stays off by default because the v1.2 sweep
+found no count gain.
 
 ## Test
 
