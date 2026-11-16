@@ -270,6 +270,7 @@ public final class TrackScheduler extends AudioEventAdapter {
     if (!endReason.mayStartNext) {
       current = null;
       pending = null;
+      clearLoop();
       changed();
       return;
     }

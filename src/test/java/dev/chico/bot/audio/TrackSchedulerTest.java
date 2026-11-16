@@ -438,6 +438,34 @@ class TrackSchedulerTest {
   }
 
   @Test
+  void cleanupClearsSingleLoop() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler = new TrackScheduler(player, 200);
+    TrackCandidate a = candidate("a");
+    scheduler.queue(a);
+    scheduler.loopCurrent();
+
+    scheduler.onTrackEnd(player, a.track(), AudioTrackEndReason.CLEANUP);
+
+    assertEquals(TrackScheduler.LoopMode.OFF, scheduler.loopView().mode());
+  }
+
+  @Test
+  void replacedClearsSingleLoop() {
+    AudioPlayerManager manager = new DefaultAudioPlayerManager();
+    AudioPlayer player = manager.createPlayer();
+    TrackScheduler scheduler = new TrackScheduler(player, 200);
+    TrackCandidate a = candidate("a");
+    scheduler.queue(a);
+    scheduler.loopCurrent();
+
+    scheduler.onTrackEnd(player, a.track(), AudioTrackEndReason.REPLACED);
+
+    assertEquals(TrackScheduler.LoopMode.OFF, scheduler.loopView().mode());
+  }
+
+  @Test
   void skipToAgainstConcurrentTrackEndStaysConsistent() throws Exception {
     // Best-effort guard: the race window needs a mid-sequence track end,
     // which no deterministic single-threaded test can stage. This pins that
