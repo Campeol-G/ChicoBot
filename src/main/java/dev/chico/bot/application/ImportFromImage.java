@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +86,7 @@ public final class ImportFromImage {
   private final long maxBytes;
   private final long maxPixels;
   private final int maxTracks;
+  private volatile Duration overallTimeout;
 
   public ImportFromImage(
       Config config,
@@ -103,6 +105,16 @@ public final class ImportFromImage {
     this.maxBytes = config.imgMaxBytes();
     this.maxPixels = config.imgMaxPixels();
     this.maxTracks = config.importMaxTracks();
+    this.overallTimeout =
+        Duration.ofMillis(MAX_IMAGES * (10_000 + ocrTimeout.toMillis()) + 5_000);
+  }
+
+  void overallTimeoutForTests(Duration timeout) {
+    this.overallTimeout = timeout;
+  }
+
+  int availableOcrSlotsForTests() {
+    return ocrSlots.availablePermits();
   }
 
   public CompletableFuture<ImportResult> run(
@@ -116,10 +128,11 @@ public final class ImportFromImage {
       long guildId,
       List<AttachmentInput> attachments,
       ImportProgress progress) {
+    AtomicBoolean cancelled = new AtomicBoolean(false);
     return CompletableFuture.supplyAsync(
             () -> {
               try {
-                return importSync(userId, guildId, attachments, progress);
+                return importSync(userId, guildId, attachments, progress, cancelled);
               } catch (ImportException e) {
                 throw new CompletionException(e);
               }
@@ -127,11 +140,12 @@ public final class ImportFromImage {
             EXECUTOR)
         // POR QUE: one slot covers download+preprocess+OCR per image, so the
         // total fits in images * (HTTP timeout + OCR timeout) plus slack.
-        .orTimeout(
-            MAX_IMAGES * (10_000 + ocrTimeout.toMillis()) + 5_000,
-            TimeUnit.MILLISECONDS)
+        .orTimeout(overallTimeout.toMillis(), TimeUnit.MILLISECONDS)
         .exceptionallyCompose(
             failure -> {
+              // POR QUE: orTimeout only completes the caller's future; the
+              // supplier keeps running unless it observes this flag.
+              cancelled.set(true);
               Throwable cause =
                   failure instanceof CompletionException ? failure.getCause() : failure;
               if (cause instanceof TimeoutException) {
@@ -148,7 +162,8 @@ public final class ImportFromImage {
       long userId,
       long guildId,
       List<AttachmentInput> attachments,
-      ImportProgress progress)
+      ImportProgress progress,
+      AtomicBoolean cancelled)
       throws ImportException {
     List<AttachmentInput> first = attachments.stream().limit(MAX_IMAGES).toList();
     if (first.isEmpty()) {
@@ -162,7 +177,8 @@ public final class ImportFromImage {
       List<List<ParsedTrack>> perImage = new ArrayList<>();
       int index = 0;
       for (AttachmentInput in : first) {
-        perImage.add(readOne(in, index++));
+        throwIfCancelled(cancelled);
+        perImage.add(readOne(in, index++, cancelled));
         try {
           progress.onImage(index, first.size());
         } catch (RuntimeException ignored) {
@@ -206,7 +222,8 @@ public final class ImportFromImage {
     }
   }
 
-  private List<ParsedTrack> readOne(AttachmentInput in, int index) throws ImportException {
+  private List<ParsedTrack> readOne(
+      AttachmentInput in, int index, AtomicBoolean cancelled) throws ImportException {
     if (in == null
         || in.url() == null
         || AttachmentPolicy.validateReported(in, maxBytes, maxPixels)
@@ -223,6 +240,7 @@ public final class ImportFromImage {
     }
     boolean slot = false;
     try {
+      throwIfCancelled(cancelled);
       // POR QUE: the slot covers download+preprocess too — those hold the
       // largest transient buffers, so bounding only OCR still OOMs.
       slot = ocrSlots.tryAcquire(ocrTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -230,7 +248,7 @@ public final class ImportFromImage {
         throw new ImportException(
             Reason.OCR_FAILED, "The bot is busy right now. Try again.");
       }
-      return readOneGuarded(in, index);
+      return readOneGuarded(in, index, cancelled);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
@@ -241,7 +259,8 @@ public final class ImportFromImage {
     }
   }
 
-  private List<ParsedTrack> readOneGuarded(AttachmentInput in, int index) throws ImportException {
+  private List<ParsedTrack> readOneGuarded(
+      AttachmentInput in, int index, AtomicBoolean cancelled) throws ImportException {
     long stage = System.currentTimeMillis();
     byte[] raw = downloader.download(in);
     if (AttachmentPolicy.validateBytes(raw, maxPixels)
@@ -264,6 +283,7 @@ public final class ImportFromImage {
     OcrResult ocrResult;
     stage = System.currentTimeMillis();
     try {
+      throwIfCancelled(cancelled);
       ocrResult = ocr.read(png);
     } catch (OcrException e) {
       throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
@@ -273,5 +293,11 @@ public final class ImportFromImage {
     log.debug("import image={} ocrMs={} words={} tracks={}",
         index, stage, ocrResult.words().size(), parsed.size());
     return parsed;
+  }
+
+  private static void throwIfCancelled(AtomicBoolean cancelled) throws ImportException {
+    if (cancelled.get()) {
+      throw new ImportException(Reason.OCR_FAILED, "Reading the image timed out. Try again.");
+    }
   }
 }

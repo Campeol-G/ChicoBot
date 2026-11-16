@@ -373,6 +373,51 @@ class ImportFromImageTest {
   }
 
   @Test
+  void overallTimeoutStopsBackgroundImportAndFreesSlots() throws Exception {
+    byte[] png = tinyPng();
+    java.util.concurrent.atomic.AtomicInteger ocrCalls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    OcrEngine slow =
+        bs -> {
+          ocrCalls.incrementAndGet();
+          try {
+            Thread.sleep(400);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new dev.chico.bot.ocr.OcrException("interrupted", e);
+          }
+          return lines(List.of("Alpha"));
+        };
+    Config config = new Config(Map.of("DISCORD_TOKEN", "test"));
+    ImportFromImage flow =
+        new ImportFromImage(
+            config,
+            new FakeDownloader(png),
+            slow,
+            new DefaultTrackLineParser(),
+            new ImagePreprocessor(config.imgMaxPixels()),
+            new ImportSession.Store());
+    flow.overallTimeoutForTests(Duration.ofMillis(300));
+    List<AttachmentInput> images =
+        List.of(
+            attachment("a.png"),
+            attachment("b.png"),
+            attachment("c.png"),
+            attachment("d.png"),
+            attachment("e.png"));
+    try {
+      flow.run(7L, 9L, images).join();
+      fail("expected ImportException");
+    } catch (CompletionException e) {
+      assertEquals(ImportFromImage.Reason.OCR_FAILED, reasonOf(e));
+    }
+    int afterTimeout = ocrCalls.get();
+    Thread.sleep(1200);
+    assertEquals(afterTimeout, ocrCalls.get());
+    assertEquals(config.ocrMaxConcurrency(), flow.availableOcrSlotsForTests());
+  }
+
+  @Test
   void importBusyFailsFast() throws Exception {
     byte[] png = tinyPng();
     CountDownLatch entered = new CountDownLatch(1);
