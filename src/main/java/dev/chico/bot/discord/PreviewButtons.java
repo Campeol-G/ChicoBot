@@ -282,19 +282,16 @@ public final class PreviewButtons extends ListenerAdapter {
                       double score =
                           new dev.chico.bot.source.Ranker(0.0).score(best, query.strip());
                       log.info(
-                          "Play all resolving {}/{} query={} -> {} score={} source={}",
+                          "Play all resolving {}/{} score={} source={}",
                           index + 1,
                           tracks.size(),
-                          query,
-                          best.title(),
                           String.format("%.3f", score),
                           best.source());
                     } else {
                       log.info(
-                          "Play all resolving {}/{} query={} -> not found",
+                          "Play all resolving {}/{} -> not found",
                           index + 1,
-                          tracks.size(),
-                          tracks.get(index).title() + " " + tracks.get(index).artist());
+                          tracks.size());
                     }
                   } finally {
                     resolveSlots.release();
