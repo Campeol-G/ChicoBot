@@ -3,8 +3,10 @@ package dev.chico.bot.source;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -42,6 +44,17 @@ class SpotifyOauthSetupTest {
     assertEquals("SPOTIFY_REFRESH_TOKEN=new\n", Files.readString(file));
     assertEquals(
         "rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)));
+  }
+
+  @Test
+  void symlinkIsRefusedAndTargetUntouched(@TempDir Path dir) throws Exception {
+    Path target = dir.resolve("target");
+    Files.writeString(target, "keep");
+    Path link = dir.resolve("link");
+    Files.createSymbolicLink(link, target);
+
+    assertThrows(IOException.class, () -> SpotifyOauthSetup.writeToken(link, "token"));
+    assertEquals("keep", Files.readString(target));
   }
 
   @Test

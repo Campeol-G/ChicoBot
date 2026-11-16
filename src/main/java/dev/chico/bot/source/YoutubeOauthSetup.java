@@ -4,6 +4,7 @@ import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -52,6 +53,9 @@ public final class YoutubeOauthSetup {
   }
 
   static void writeToken(Path file, String token) throws IOException {
+    if (Files.isSymbolicLink(file)) {
+      throw new IOException("Refuses to write token through a symbolic link: " + file);
+    }
     if (Files.exists(file)) {
       try {
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
@@ -70,7 +74,8 @@ public final class YoutubeOauthSetup {
         "YT_REFRESH_TOKEN=" + token + "\n",
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING,
-        StandardOpenOption.WRITE);
+        StandardOpenOption.WRITE,
+        LinkOption.NOFOLLOW_LINKS);
     try {
       Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
     } catch (UnsupportedOperationException ignored) {
