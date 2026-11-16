@@ -15,7 +15,7 @@ public final class PingCommand extends ListenerAdapter {
   @Override
   public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
     if ("ping".equals(event.getName())) {
-      event.reply("Pong").queue();
+      event.replyEmbeds(Embeds.info("🏓 Pong")).queue();
     }
   }
 }

@@ -56,7 +56,7 @@ public final class MessageListener extends ListenerAdapter {
     } else if (!text.isEmpty()) {
       event
           .getMessage()
-          .reply("Mention me with `p <song>` or with a playlist screenshot.")
+          .replyEmbeds(Embeds.info("Mention me with `p <song>` or with a playlist screenshot."))
           .setAllowedMentions(Collections.emptyList())
           .queue();
     }
@@ -66,7 +66,7 @@ public final class MessageListener extends ListenerAdapter {
     if (query.isEmpty()) {
       event
           .getMessage()
-          .reply("Tell me what to play: `@bot p <song name or link>`.")
+          .replyEmbeds(Embeds.info("Tell me what to play: `@bot p <song name or link>`."))
           .setAllowedMentions(Collections.emptyList())
           .queue(null, err -> log.warn("play reply failed", err));
       return;
@@ -76,7 +76,7 @@ public final class MessageListener extends ListenerAdapter {
     if (channel == null) {
       event
           .getMessage()
-          .reply("Join a voice channel first.")
+          .replyEmbeds(Embeds.error("Join a voice channel first."))
           .setAllowedMentions(Collections.emptyList())
           .queue(null, err -> log.warn("play reply failed", err));
       return;
@@ -124,7 +124,7 @@ public final class MessageListener extends ListenerAdapter {
     if (!rateLimiter.tryAcquire("import:" + userId, cooldownUserS, clock)) {
       event
           .getMessage()
-          .reply("Slow down. Wait a few seconds before another import.")
+          .replyEmbeds(Embeds.error("Slow down. Wait a few seconds before another import."))
           .setAllowedMentions(Collections.emptyList())
           .queue();
       return;
@@ -139,7 +139,7 @@ public final class MessageListener extends ListenerAdapter {
     if (inputs.isEmpty()) {
       event
           .getMessage()
-          .reply("Could not read those attachments. Send a PNG or JPEG.")
+          .replyEmbeds(Embeds.error("Could not read those attachments. Send a PNG or JPEG."))
           .setAllowedMentions(Collections.emptyList())
           .queue();
       return;

@@ -221,7 +221,7 @@ public final class MusicCommands extends ListenerAdapter {
               if (posted) {
                 event
                     .getHook()
-                    .sendMessage("Live queue posted below.")
+                    .sendMessageEmbeds(Embeds.info("Live queue posted below."))
                     .setEphemeral(true)
                     .queue(null, err -> log.warn("queue reply failed", err));
               } else {
@@ -259,7 +259,7 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("Join my voice channel to control playback.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
-    event.reply(message).queue(null, err -> log.warn("reply failed", err));
+    event.replyEmbeds(Embeds.info(message)).queue(null, err -> log.warn("reply failed", err));
   }
 
   private boolean inSameChannel(SlashCommandInteractionEvent event) {
