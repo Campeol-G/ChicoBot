@@ -139,12 +139,14 @@ class ConfigTest {
   }
 
   @Test
-  void cipherUrlWithoutPasswordRejected() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new Config(Map.of(
+  void cipherUrlWithoutPasswordIsAllowedForThePublicInstance() {
+    Config config =
+        new Config(Map.of(
             "DISCORD_TOKEN", "test-token-placeholder",
-            "YT_CIPHER_URL", "http://localhost:8001")));
+            "YT_CIPHER_URL", "https://cipher.kikkia.dev/"));
+
+    assertEquals("https://cipher.kikkia.dev/", config.ytCipherUrl().orElseThrow());
+    assertEquals("", config.ytCipherPassword());
   }
 
   @Test
