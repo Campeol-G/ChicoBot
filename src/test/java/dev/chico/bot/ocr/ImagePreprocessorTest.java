@@ -73,6 +73,15 @@ class ImagePreprocessorTest {
   }
 
   @Test
+  void whiteImageStaysGrayWhenDarkOtsuIsEnabled() throws Exception {
+    byte[] processed =
+        new ImagePreprocessor(4096L * 4096L, false, true)
+            .preprocess(pngOf(image(245, 128, 0)));
+
+    assertHasMidtone(ImageIO.read(new ByteArrayInputStream(processed)));
+  }
+
+  @Test
   void explicitBinarizeStillAppliesToWhiteImages() throws Exception {
     byte[] processed =
         new ImagePreprocessor(4096L * 4096L, true)
