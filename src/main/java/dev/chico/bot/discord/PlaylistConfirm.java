@@ -112,6 +112,14 @@ public final class PlaylistConfirm extends ListenerAdapter {
                 .queue(null, err -> log.warn("playlist reply failed", err));
             return;
           }
+          if (MusicCommands.playBlocked(event.getGuild(), channel)) {
+            event
+                .getHook()
+                .sendMessage("Join my voice channel to control playback.")
+                .setEphemeral(true)
+                .queue(null, err -> log.warn("playlist reply failed", err));
+            return;
+          }
           playback
               .confirmPlaylist(
                   sessionId,

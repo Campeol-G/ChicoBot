@@ -237,6 +237,11 @@ public final class PreviewButtons extends ListenerAdapter {
       event.reply("Join a voice channel first.").setEphemeral(true).queue();
       return;
     }
+    if (MusicCommands.playBlocked(event.getGuild(), channel)) {
+      inFlight.remove(sessionId);
+      event.reply("Join my voice channel to control playback.").setEphemeral(true).queue();
+      return;
+    }
     final AudioChannelUnion voiceChannel = channel;
     List<ParsedTrack> tracks = session.orElseThrow().tracks();
     // Take the session out now: a second click, Remove or Cancel during the

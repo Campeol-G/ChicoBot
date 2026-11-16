@@ -84,6 +84,14 @@ public final class MessageListener extends ListenerAdapter {
     }
     long guildId = event.getGuild().getIdLong();
     long userId = event.getAuthor().getIdLong();
+    if (MusicCommands.playBlocked(event.getGuild(), channel)) {
+      event
+          .getMessage()
+          .replyEmbeds(Embeds.error("Join my voice channel to control playback."))
+          .setAllowedMentions(Collections.emptyList())
+          .queue(null, err -> log.warn("play reply failed", err));
+      return;
+    }
     playback
         .play(guildId, channel.getIdLong(), userId, query)
         .thenAccept(

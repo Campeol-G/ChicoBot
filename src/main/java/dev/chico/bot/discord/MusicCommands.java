@@ -119,11 +119,7 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("I don't have permission to join that voice channel.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
-    var selfChannel = event.getGuild().getAudioManager().getConnectedChannel();
-    boolean botConnected = selfChannel != null;
-    boolean requesterInBotChannel =
-        botConnected && channel.getIdLong() == selfChannel.getIdLong();
-    if (blocksPlay(botConnected, requesterInBotChannel, voiceHumans(event.getGuild()).size())) {
+    if (playBlocked(event.getGuild(), channel)) {
       event.reply("Join my voice channel to control playback.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
@@ -284,6 +280,14 @@ public final class MusicCommands extends ListenerAdapter {
 
   static boolean blocksPlay(boolean botConnected, boolean requesterInBotChannel, int humansInBotChannel) {
     return botConnected && !requesterInBotChannel && humansInBotChannel > 0;
+  }
+
+  static boolean playBlocked(Guild guild, AudioChannelUnion requesterChannel) {
+    var selfChannel = guild.getAudioManager().getConnectedChannel();
+    boolean botConnected = selfChannel != null;
+    boolean requesterInBotChannel =
+        botConnected && requesterChannel != null && requesterChannel.getIdLong() == selfChannel.getIdLong();
+    return blocksPlay(botConnected, requesterInBotChannel, voiceHumans(guild).size());
   }
 
   /** Service replies are strings; keep the refusal set in one place. */
