@@ -106,6 +106,7 @@ public final class PlaybackService {
   private final int playCooldownS;
   private final int resolveConcurrency;
   private final Duration resolveTimeout;
+  private final double matchThreshold;
   private volatile java.util.function.Consumer<Long> queueChanged = guildId -> {
   };
   private volatile java.util.function.BiConsumer<Long, String> trackFailureListener =
@@ -123,6 +124,7 @@ public final class PlaybackService {
     this.playCooldownS = config.playCooldownS();
     this.resolveConcurrency = config.resolveConcurrency();
     this.resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
+    this.matchThreshold = config.matchThreshold();
     Duration resolveTimeout = this.resolveTimeout;
     YoutubeAudioSourceManager youtube = createYoutubeSource(config);
     playerManager.registerSourceManager(youtube);
@@ -223,6 +225,7 @@ public final class PlaybackService {
     this.playCooldownS = config.playCooldownS();
     this.resolveConcurrency = config.resolveConcurrency();
     this.resolveTimeout = Duration.ofMillis(config.resolveTimeoutMs());
+    this.matchThreshold = config.matchThreshold();
     this.resolver = resolver;
     this.metadata = metadata;
     this.playlistFlow =
@@ -374,6 +377,17 @@ public final class PlaybackService {
             });
   }
 
+  static TrackCandidate bestMatch(
+      List<TrackCandidate> candidates, String text, double threshold) {
+    Ranker ranker = new Ranker(threshold);
+    for (TrackCandidate candidate : candidates) {
+      if (ranker.score(candidate, text) >= threshold) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   private CompletableFuture<List<TrackCandidate>> resolvePlaylistItems(
       List<PlaylistItem> items) {
     java.util.concurrent.Semaphore slots =
@@ -390,7 +404,7 @@ public final class PlaybackService {
                             resolver
                                 .resolve(new TextQuery(item.searchText()))
                                 .get(resolveTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-                        return candidates.isEmpty() ? null : candidates.get(0);
+                        return bestMatch(candidates, item.searchText(), matchThreshold);
                       } finally {
                         slots.release();
                       }

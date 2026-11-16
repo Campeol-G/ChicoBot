@@ -1077,6 +1077,31 @@ class PlaybackServiceTest {
   }
 
   @Test
+  void bestMatchPicksFirstCandidateAboveThreshold() {
+    TrackCandidate unrelated = candidate("Xyzq Qwerty Zxcv");
+    TrackCandidate related = candidate("Never Gonna Give You Up");
+    String text = "artist Never Gonna Give You Up";
+    dev.chico.bot.source.Ranker ranker = new dev.chico.bot.source.Ranker(0.0);
+    double low = ranker.score(unrelated, text);
+    double high = ranker.score(related, text);
+    double threshold = (low + high) / 2.0;
+
+    TrackCandidate picked =
+        PlaybackService.bestMatch(java.util.List.of(unrelated, related), text, threshold);
+
+    assertEquals("Never Gonna Give You Up", picked.title());
+  }
+
+  @Test
+  void bestMatchReturnsNullWhenNothingPasses() {
+    TrackCandidate unrelated = candidate("Xyzq Qwerty Zxcv");
+
+    assertNull(
+        PlaybackService.bestMatch(
+            java.util.List.of(unrelated), "artist Never Gonna Give You Up", 0.99));
+  }
+
+  @Test
   void audioQualityUsesHighResamplingAndBuffer() {
     DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
 
