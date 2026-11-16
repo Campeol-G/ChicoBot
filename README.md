@@ -144,7 +144,7 @@ Only `DISCORD_TOKEN` is required.
 | `OCR_LANGS` | `por+eng` | Tesseract languages. |
 | `OCR_TIMEOUT_MS` | `8000` | Timeout per OCR run. |
 | `OCR_MAX_CONCURRENCY` | `2` | Simultaneous OCR processes. |
-| `OCR_BINARIZE_DARK` | `false` | Opt-in Otsu for dark prints; the v1.2 count sweep found no default gain. |
+| `OCR_BINARIZE_DARK` | `false` | Opt-in Otsu for dark prints; measured 577 vs 581 baseline, so it stays off. |
 | `IMG_MAX_BYTES` | `8388608` | Max image size (8 MB). |
 | `IMG_MAX_PIXELS` | `16777216` | Max pixels (4096×4096). |
 | `IMPORT_MAX_TRACKS` | `50` | Tracks per import (remove menu shows the first 25). |
@@ -305,7 +305,8 @@ scripts/ocr-eval.sh <references-dir> --dark-otsu # candidate
 
 The script prints counts only, never titles. `OCR_BINARIZE_DARK=true` enables
 the opt-in dark-print Otsu; it stays off by default because the v1.2 sweep
-found no count gain.
+measured 577 tracks vs 581 for the baseline. `OCR_BINARIZE=true` is the CLI
+override that applies Otsu to every image, white prints included.
 
 ## Test
 
