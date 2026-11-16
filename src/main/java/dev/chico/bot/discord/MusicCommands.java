@@ -187,7 +187,7 @@ public final class MusicCommands extends ListenerAdapter {
   }
 
   /** Non-bot humans in the bot's current voice channel (vote denominator). */
-  private static java.util.Set<Long> voiceHumans(Guild guild) {
+  static java.util.Set<Long> voiceHumans(Guild guild) {
     var channel = guild.getAudioManager().getConnectedChannel();
     if (channel == null) {
       return java.util.Set.of();

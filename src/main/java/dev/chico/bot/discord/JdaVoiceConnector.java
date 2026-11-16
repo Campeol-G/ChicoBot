@@ -50,7 +50,18 @@ public final class JdaVoiceConnector implements VoiceConnector {
       log.warn("voice join refused: missing VOICE_CONNECT/SPEAK in channel {}", voiceChannelId);
       return false;
     }
+    // POR QUE: the caller's channel check can be minutes old on Play-all and
+    // playlist confirm; moving away from listeners is refused at the moment of
+    // the move, when the bot's current channel is the fresh truth.
     AudioManager audio = guild.getAudioManager();
+    var current = audio.getConnectedChannel();
+    boolean requesterInCurrent =
+        current != null && voiceChannelId == current.getIdLong();
+    if (MusicCommands.blocksPlay(
+        current != null, requesterInCurrent, MusicCommands.voiceHumans(guild).size())) {
+      log.warn("voice join refused: listeners in the bot's current channel");
+      return false;
+    }
     audio.setSendingHandler(handlerProvider.apply(guildId));
     audio.openAudioConnection(channel);
     return true;
