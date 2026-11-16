@@ -45,17 +45,44 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
 - Linux x64, Java 25+ (tested on JDK 27), Maven 3.10+
 - Tesseract 5.x with `por` and `eng` data
   (`sudo pacman -S tesseract tesseract-data-por tesseract-data-eng` on Arch)
-- Token in `~/.config/chicos-bot/env` (mode 600), created from `.env.example`
+- Token in `~/.config/chicos-bot/env` (mode 600), created by `chicoBot setup`
 
 ## Run
+
+From a fresh clone:
+
+```bash
+bin/chicoBot
+```
+
+The first run is a setup wizard. It asks for the necessary values in order,
+labels each as `[required]`, `[required for YouTube]`, `[required for image
+import]` or `[optional]`, writes `~/.config/chicos-bot/env` (mode 600), builds
+`target/chicos-bot.jar`, installs `~/.local/bin/chicoBot` and starts the bot.
+Use `Ctrl+C` to stop; there is no daemon or `end` command.
+
+After that:
+
+```bash
+chicoBot            # start in the foreground
+chicoBot setup      # re-run the wizard
+chicoBot check      # check Java/Maven/Tesseract/env/jar/cipher
+chicoBot help       # usage
+```
+
+`bin/chicoBot` also works without the symlink. The wizard covers the cipher,
+optional YouTube login, dev guild, Spotify app/login and Apple Music tokens;
+the sections below explain the optional services. An empty
+`YT_CIPHER_PASSWORD` is valid for the public no-auth cipher.
+
+`run.sh` is the low-level launcher and expects the env file and jar to exist:
 
 ```bash
 mvn -q package -DskipTests   # produces target/chicos-bot.jar
 ./run.sh                     # loads ~/.config/chicos-bot/env and starts the bot
 ```
 
-`run.sh` is the supported path: it loads the env file itself, so it works in a
-fresh terminal. The manual equivalent is:
+The manual equivalent is:
 
 ```bash
 set -a; . ~/.config/chicos-bot/env; set +a
@@ -66,7 +93,7 @@ Do not restart in a loop: Discord allows 1000 IDENTIFY per 24 h and resets the
 token when that is exceeded. The systemd unit uses `RestartSec=10` for the
 same reason.
 
-For a server install, see `deploy/chicos-bot.service`.
+For a server install or background operation, see `deploy/chicos-bot.service`.
 
 ## Creating the bot (Developer Portal)
 
