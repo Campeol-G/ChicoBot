@@ -37,4 +37,13 @@ class MusicCommandsTest {
     assertEquals(
         "a".repeat(MusicCommands.MAX_QUERY_LENGTH), MusicCommands.clampQuery(query));
   }
+
+  @Test
+  void blocksPlayNeedsHumansAloneElsewhere() {
+    assertFalse(MusicCommands.blocksPlay(false, false, 1));
+    assertFalse(MusicCommands.blocksPlay(false, false, 0));
+    assertFalse(MusicCommands.blocksPlay(true, true, 1));
+    assertFalse(MusicCommands.blocksPlay(true, false, 0));
+    assertTrue(MusicCommands.blocksPlay(true, false, 1));
+  }
 }
