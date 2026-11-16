@@ -15,11 +15,15 @@ public final class Embeds {
   private static final int MAX_QUEUE_LINES = 30;
   private static final int MAX_DESCRIPTION = 4096;
 
+  static final Color COZY_AMBER = new Color(0xE0A96D);
+  static final Color COZY_SAGE = new Color(0x9CAF88);
+  static final Color COZY_ROSE = new Color(0xC97C7C);
+
   private Embeds() {
   }
 
   public static MessageEmbed nowPlaying(TrackCandidate candidate) {
-    String title = TextSanitizer.escape(candidate.title());
+    String title = "🎧 " + TextSanitizer.escape(candidate.title());
     EmbedBuilder builder = new EmbedBuilder();
     if (candidate.uri() != null) {
       builder.setTitle(title, candidate.uri().toString());
@@ -27,26 +31,32 @@ public final class Embeds {
       builder.setTitle(title);
     }
     builder.setAuthor(TextSanitizer.escape(candidate.artist()));
-    builder.setFooter(sourceName(candidate.source()) + " • " + format(candidate.duration()));
-    builder.setColor(Color.GREEN);
+    builder.setFooter(
+        "🌿 " + sourceName(candidate.source()) + " • " + format(candidate.duration()));
+    builder.setColor(COZY_AMBER);
     setThumbnail(builder, candidate);
     return builder.build();
   }
 
   public static MessageEmbed queue(List<TrackCandidate> queued) {
-    return queue(queued, dev.chico.bot.audio.TrackScheduler.LoopView.off());
+    return queue(queued, dev.chico.bot.audio.TrackScheduler.LoopView.off(), false);
   }
 
   public static MessageEmbed queue(
       List<TrackCandidate> queued, dev.chico.bot.audio.TrackScheduler.LoopView loop) {
-    EmbedBuilder builder = new EmbedBuilder().setTitle("Queue").setColor(Color.BLUE);
+    return queue(queued, loop, false);
+  }
+
+  public static MessageEmbed queue(
+      List<TrackCandidate> queued,
+      dev.chico.bot.audio.TrackScheduler.LoopView loop,
+      boolean currentFirst) {
+    EmbedBuilder builder = new EmbedBuilder().setTitle("🌿 Queue").setColor(COZY_SAGE);
     boolean loopAll =
         loop != null && loop.mode() == dev.chico.bot.audio.TrackScheduler.LoopMode.ALL;
     if (queued.isEmpty()) {
       builder.setDescription("The queue is empty.");
-      if (loopAll) {
-        builder.setFooter("🔁 Looping the queue.");
-      }
+      builder.setFooter(loopAll ? "🔁 Looping the queue." : "🌿 Nothing queued yet.");
       return builder.build();
     }
     StringBuilder lines = new StringBuilder();
@@ -57,12 +67,17 @@ public final class Embeds {
           loop != null
               && loop.mode() == dev.chico.bot.audio.TrackScheduler.LoopMode.SINGLE
               && loop.markedPosition() == i + 1;
+      boolean current = currentFirst && i == 0;
+      String entry =
+          (i + 1) + ". " + TextSanitizer.escape(candidate.title());
+      if (current) {
+        entry = "**" + entry + "**";
+      }
       lines
+          .append(current ? "▶ " : "")
           .append(marked ? "🔂 " : "")
-          .append(i + 1)
-          .append(". ")
-          .append(TextSanitizer.escape(candidate.title()))
-          .append(" - ")
+          .append(entry)
+          .append(" — ")
           .append(TextSanitizer.escape(candidate.artist()))
           .append('\n');
     }
@@ -70,16 +85,19 @@ public final class Embeds {
       lines.append("…and ").append(queued.size() - shown).append(" more.");
     }
     builder.setDescription(truncate(lines.toString().trim()));
+    String footer =
+        "🌿 " + queued.size() + (queued.size() == 1 ? " track" : " tracks");
     if (loopAll) {
-      builder.setFooter("🔁 Looping the queue.");
+      footer += " • 🔁 Looping the queue";
     }
+    builder.setFooter(footer);
     return builder.build();
   }
 
   public static MessageEmbed error(String message) {
     return new EmbedBuilder()
         .setDescription(TextSanitizer.escape(message))
-        .setColor(Color.RED)
+        .setColor(COZY_ROSE)
         .build();
   }
 
@@ -102,11 +120,12 @@ public final class Embeds {
       int droppedImages,
       boolean warned,
       int suspiciousDropped) {
-    EmbedBuilder builder = new EmbedBuilder().setTitle("Import preview").setColor(Color.BLUE);
+    EmbedBuilder builder =
+        new EmbedBuilder().setTitle("📥 Import preview").setColor(COZY_AMBER);
     StringBuilder lines = new StringBuilder();
     if (warned) {
       lines
-          .append("⚠ This doesn't look like a playlist — ")
+          .append("⚠️ This doesn't look like a playlist — ")
           .append(suspiciousDropped)
           .append(" lines skipped. Are these the songs you'd like to listen?")
           .append(" Press Play all to confirm.")
@@ -116,18 +135,22 @@ public final class Embeds {
       dev.chico.bot.parser.ParsedTrack track = tracks.get(i);
       lines.append(i + 1).append(". ").append(TextSanitizer.escape(track.title()));
       if (!track.artist().isEmpty()) {
-        lines.append(" - ").append(TextSanitizer.escape(track.artist()));
+        lines.append(" — ").append(TextSanitizer.escape(track.artist()));
       }
       lines.append('\n');
     }
     builder.setDescription(truncate(lines.toString().trim()));
     if (totalDetected > tracks.size()) {
       builder.setFooter(
-          "Showing " + tracks.size() + " of " + totalDetected + droppedSuffix(droppedImages));
+          "🌿 Showing "
+              + tracks.size()
+              + " of "
+              + totalDetected
+              + droppedSuffix(droppedImages));
     } else if (droppedImages > 0) {
-      builder.setFooter(tracks.size() + " tracks" + droppedSuffix(droppedImages));
+      builder.setFooter("🌿 " + tracks.size() + " tracks" + droppedSuffix(droppedImages));
     } else {
-      builder.setFooter(tracks.size() + " tracks.");
+      builder.setFooter("🌿 " + tracks.size() + " tracks.");
     }
     return builder.build();
   }
@@ -145,7 +168,8 @@ public final class Embeds {
       int page,
       boolean canPlaySingle,
       String note) {
-    EmbedBuilder builder = new EmbedBuilder().setTitle("Playlist preview").setColor(Color.BLUE);
+    EmbedBuilder builder =
+        new EmbedBuilder().setTitle("📋 Playlist preview").setColor(COZY_SAGE);
     if (items.isEmpty()) {
       String message =
           note != null && !note.isBlank() ? note : "That playlist is empty.";
@@ -162,12 +186,12 @@ public final class Embeds {
       dev.chico.bot.application.PlaylistItem item = items.get(i);
       lines.append(i + 1).append(". ").append(TextSanitizer.escape(item.title()));
       if (item.artist() != null && !item.artist().isBlank()) {
-        lines.append(" - ").append(TextSanitizer.escape(item.artist()));
+        lines.append(" — ").append(TextSanitizer.escape(item.artist()));
       }
       lines.append('\n');
     }
     builder.setDescription(truncate(lines.toString().trim()));
-    String footer = "Showing " + (from + 1) + "–" + to + " of " + items.size() + ".";
+    String footer = "🌿 Showing " + (from + 1) + "–" + to + " of " + items.size() + ".";
     if (note != null && !note.isBlank()) {
       footer += " " + note;
     }
@@ -195,15 +219,17 @@ public final class Embeds {
   public static MessageEmbed info(String message) {
     return new EmbedBuilder()
         .setDescription(TextSanitizer.escape(message))
-        .setColor(Color.BLUE)
+        .setColor(COZY_AMBER)
+        .setFooter("🌿 chicos-bot")
         .build();
   }
 
   public static MessageEmbed help() {
     return new EmbedBuilder()
-        .setTitle("chicos-bot help")
+        .setTitle("☕ chicos-bot help")
         .setDescription(truncate(helpText()))
-        .setColor(Color.BLUE)
+        .setColor(COZY_SAGE)
+        .setFooter("🌿 chicos-bot")
         .build();
   }
 
@@ -229,7 +255,7 @@ public final class Embeds {
         Message command **Play music from image** — import from an older screenshot.
 
         **Links and sources**
-        YouTube and SoundCloud links play directly. Apple Music links become a search. Spotify links use the title only (partial support); Spotify playlists are not supported. YouTube and SoundCloud playlist links show a preview before anything is queued.
+        YouTube and SoundCloud links play directly. Apple Music track links become a search; Apple Music playlists need a developer token, and library playlists need a Music User Token. Spotify tracks use the Web API or the title-only oEmbed fallback; Spotify playlists need a user login and only work for playlists you own or collaborate on. YouTube and SoundCloud playlist links show a preview before anything is queued.
 
         **Votes**
         With 3+ people in the voice channel, skipping or removing someone else's track needs a majority. Your own track is immediate. `/stop` and `/exit` are always free.

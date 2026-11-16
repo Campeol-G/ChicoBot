@@ -30,6 +30,29 @@ class EmbedsTest {
   }
 
   @Test
+  void cozyPaletteIsUsed() {
+    assertEquals(Embeds.COZY_AMBER, Embeds.nowPlaying(candidate("A", "B", 200)).getColor());
+    assertEquals(Embeds.COZY_AMBER, Embeds.info("hello").getColor());
+    assertEquals(Embeds.COZY_SAGE, Embeds.help().getColor());
+    assertEquals(Embeds.COZY_ROSE, Embeds.error("nope").getColor());
+  }
+
+  @Test
+  void queueMarksCurrentTrackOnlyWhenAsked() {
+    var marked =
+        Embeds.queue(
+            List.of(candidate("First", "a", 200), candidate("Second", "b", 200)),
+            new dev.chico.bot.audio.TrackScheduler.LoopView(
+                dev.chico.bot.audio.TrackScheduler.LoopMode.OFF, 0),
+            true);
+    assertTrue(marked.getDescription().contains("▶ **1. First"), marked.getDescription());
+    assertFalse(marked.getDescription().contains("▶ **2."), marked.getDescription());
+
+    var plain = Embeds.queue(List.of(candidate("First", "a", 200)));
+    assertFalse(plain.getDescription().contains("▶"), plain.getDescription());
+  }
+
+  @Test
   void playlistPreviewPaginatesTenPerPage() {
     java.util.List<dev.chico.bot.application.PlaylistItem> items =
         java.util.stream.IntStream.range(0, 25)
@@ -152,10 +175,10 @@ class EmbedsTest {
   }
 
   @Test
-  void cancelEmbedIsRedError() {
+  void errorUsesCozyRose() {
     var embed = Embeds.error("Import cancelled — nothing was queued.");
 
-    assertEquals(java.awt.Color.RED, embed.getColor());
+    assertEquals(Embeds.COZY_ROSE, embed.getColor());
   }
 
   @Test

@@ -184,6 +184,6 @@ public final class QueueLive {
     List<TrackCandidate> all = new ArrayList<>();
     view.current().ifPresent(all::add);
     all.addAll(view.queued());
-    return Embeds.queue(all, playback.loopView(guildId));
+    return Embeds.queue(all, playback.loopView(guildId), view.current().isPresent());
   }
 }
