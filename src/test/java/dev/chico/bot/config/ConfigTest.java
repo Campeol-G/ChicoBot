@@ -60,10 +60,10 @@ class ConfigTest {
   }
 
   @Test
-  void ocrBinarizeDarkDefaultsOnAndCanBeDisabled() {
-    assertTrue(new Config(envWithToken()).ocrBinarizeDark());
-    assertFalse(
-        new Config(Map.of("DISCORD_TOKEN", "test", "OCR_BINARIZE_DARK", "false"))
+  void ocrBinarizeDarkDefaultsOffAndCanBeEnabled() {
+    assertFalse(new Config(envWithToken()).ocrBinarizeDark());
+    assertTrue(
+        new Config(Map.of("DISCORD_TOKEN", "test", "OCR_BINARIZE_DARK", "true"))
             .ocrBinarizeDark());
     assertThrows(
         IllegalArgumentException.class,

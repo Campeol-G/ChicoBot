@@ -24,7 +24,7 @@ public final class OcrCli {
     boolean binarize =
         Boolean.parseBoolean(System.getenv().getOrDefault("OCR_BINARIZE", "false"));
     boolean binarizeDark =
-        Boolean.parseBoolean(System.getenv().getOrDefault("OCR_BINARIZE_DARK", "true"));
+        Boolean.parseBoolean(System.getenv().getOrDefault("OCR_BINARIZE_DARK", "false"));
     byte[] raw = Files.readAllBytes(Path.of(args[0]));
     byte[] png =
         new ImagePreprocessor(4096L * 4096L, binarize, binarizeDark).preprocess(raw);

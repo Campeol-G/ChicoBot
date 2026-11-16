@@ -46,9 +46,18 @@ class ImagePreprocessorTest {
   }
 
   @Test
-  void darkImageIsBinarizedByDefault() throws Exception {
+  void darkImageIsNotBinarizedByDefault() throws Exception {
     byte[] processed =
         new ImagePreprocessor(4096L * 4096L)
+            .preprocess(pngOf(image(10, 128, 255)));
+
+    assertHasMidtone(ImageIO.read(new ByteArrayInputStream(processed)));
+  }
+
+  @Test
+  void darkOtsuCanBeEnabledExplicitly() throws Exception {
+    byte[] processed =
+        new ImagePreprocessor(4096L * 4096L, false, true)
             .preprocess(pngOf(image(10, 128, 255)));
 
     assertOnlyBinary(ImageIO.read(new ByteArrayInputStream(processed)));

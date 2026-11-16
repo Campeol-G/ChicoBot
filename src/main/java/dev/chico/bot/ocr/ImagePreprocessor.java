@@ -23,11 +23,11 @@ public final class ImagePreprocessor {
   private final boolean binarizeDark;
 
   public ImagePreprocessor(long maxPixels) {
-    this(maxPixels, false, true);
+    this(maxPixels, false, false);
   }
 
   public ImagePreprocessor(long maxPixels, boolean binarize) {
-    this(maxPixels, binarize, true);
+    this(maxPixels, binarize, false);
   }
 
   public ImagePreprocessor(long maxPixels, boolean binarize, boolean binarizeDark) {

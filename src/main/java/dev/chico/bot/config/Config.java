@@ -88,8 +88,9 @@ public final class Config {
     return parseInt("OCR_TIMEOUT_MS", 8000);
   }
 
+  /** Opt-in: the v1.2 sweep found no count gain over the baseline. */
   public boolean ocrBinarizeDark() {
-    return parseBoolean("OCR_BINARIZE_DARK", true);
+    return parseBoolean("OCR_BINARIZE_DARK", false);
   }
 
   public int ocrMaxConcurrency() {
