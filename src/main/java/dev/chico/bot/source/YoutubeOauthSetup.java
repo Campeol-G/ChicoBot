@@ -10,11 +10,12 @@ import java.nio.file.attribute.PosixFilePermissions;
 
 /**
  * One-shot YouTube OAuth device flow. Prints the verification URL and code,
- * waits for authorization in the browser, then prints the refresh token.
+ * waits for authorization in the browser, then writes the refresh token to a
+ * mode-600 file when a path argument is given, or prints it for manual use.
  *
- * <p>Run: {@code java -cp target/chicos-bot.jar dev.chico.bot.source.YoutubeOauthSetup}
- * then store the printed token as {@code YT_REFRESH_TOKEN} in the env file.
- * Never commit or share the token. Use a burner Google account, not your main.
+ * <p>Run: {@code java -cp target/chicos-bot.jar dev.chico.bot.source.YoutubeOauthSetup [token-file]}.
+ * The chicoBot setup wizard uses the file form. Never commit or share the
+ * token. Use a burner Google account, not your main.
  */
 public final class YoutubeOauthSetup {
 

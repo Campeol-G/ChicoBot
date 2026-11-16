@@ -32,6 +32,7 @@ public final class Config {
     return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
   }
 
+  /** Empty is valid for the public no-auth cipher. */
   public String ytCipherPassword() {
     return env.getOrDefault("YT_CIPHER_PASSWORD", "");
   }

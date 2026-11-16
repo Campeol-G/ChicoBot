@@ -4,7 +4,7 @@
 # first (it must live next to this repo as ../yt-cipher).
 set -euo pipefail
 
-ENV_FILE="${CHICOS_BOT_ENV:-$HOME/.config/chicos-bot/env}"
+ENV_FILE="${CHICOS_BOT_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/chicos-bot/env}"
 CIPHER_DIR="${CHICOS_CIPHER_DIR:-$(dirname "$0")/../yt-cipher}"
 JAR="$(dirname "$0")/target/chicos-bot.jar"
 

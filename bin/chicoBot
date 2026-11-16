@@ -8,6 +8,26 @@ BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 JAR="$REPO_ROOT/target/chicos-bot.jar"
 CONFIG_DIR="$(dirname -- "$ENV_FILE")"
 JAVA_ARGS=(--enable-native-access=ALL-UNNAMED -Djava.awt.headless=true)
+TEMP_FILES=()
+
+cleanup() {
+  local file
+  for file in "${TEMP_FILES[@]:-}"; do
+    if [[ -n "$file" ]]; then
+      rm -f -- "$file"
+    fi
+  done
+  return 0
+}
+
+trap cleanup EXIT
+
+new_temp() {
+  local file
+  file="$(mktemp "$1")"
+  TEMP_FILES+=("$file")
+  printf '%s' "$file"
+}
 
 usage() {
   cat <<'EOF'
@@ -35,9 +55,10 @@ have() {
 }
 
 java_major() {
-  local line
-  line="$(java -version 2>&1 | head -n 1)"
-  sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' <<<"$line"
+  # JAVA_TOOL_OPTIONS/_JAVA_OPTIONS may print a "Picked up..." line first.
+  local versions
+  versions="$(java -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p')"
+  printf '%s' "${versions%%$'\n'*}"
 }
 
 check_java() {
@@ -56,7 +77,16 @@ check_maven() {
     echo "missing: maven (needed to build the jar)"
     return 1
   fi
-  echo "maven $(mvn -version 2>/dev/null | head -n 1 | awk '{print $3}')"
+  local version major minor
+  version="$(mvn -version 2>/dev/null | head -n 1 | awk '{print $3}')"
+  major="${version%%.*}"
+  minor="${version#*.}"
+  minor="${minor%%.*}"
+  if [[ -z "$version" ]] || (( major < 3 || (major == 3 && minor < 10) )); then
+    echo "maven 3.10+ required (found ${version:-unknown})"
+    return 1
+  fi
+  echo "maven $version"
 }
 
 check_tesseract() {
@@ -117,10 +147,12 @@ check_cipher() {
     echo "curl missing; cannot check cipher"
     return 0
   fi
-  if curl -s -m 3 -o /dev/null "$url/"; then
-    echo "cipher reachable: $url"
+  local display
+  display="$(printf '%s' "$url" | sed -E 's#(://)[^/@]+@#\1#')"
+  if curl -fsS -m 3 -o /dev/null -- "$url/"; then
+    echo "cipher reachable: $display"
   else
-    echo "warning: cipher not reachable: $url"
+    echo "warning: cipher not reachable: $display"
   fi
 }
 
@@ -140,6 +172,7 @@ check() {
 }
 
 build_jar() {
+  # Test seam: lets the setup smoke verify the env writer without Maven.
   if [[ "${CHICOS_BOT_SKIP_BUILD:-0}" == "1" ]]; then
     echo "build skipped (CHICOS_BOT_SKIP_BUILD=1)"
     return 0
@@ -150,7 +183,14 @@ build_jar() {
 }
 
 ensure_env() {
-  [[ -f "$ENV_FILE" ]] && ( set -a; . "$ENV_FILE"; [[ -n "${DISCORD_TOKEN:-}" ]] )
+  [[ -f "$ENV_FILE" ]] || return 1
+  local mode
+  mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || true)"
+  if [[ "$mode" != "600" ]]; then
+    echo "warning: env mode ${mode:-unknown}; fixing to 600" >&2
+    chmod 600 "$ENV_FILE" || return 1
+  fi
+  ( set -a; . "$ENV_FILE"; [[ -n "${DISCORD_TOKEN:-}" ]] )
 }
 
 env_value() {
@@ -161,8 +201,10 @@ env_value() {
 }
 
 ensure_config_dir() {
-  mkdir -p "$CONFIG_DIR"
-  chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+  if [[ ! -d "$CONFIG_DIR" ]]; then
+    mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+  fi
 }
 
 ask() {
@@ -176,12 +218,31 @@ ask() {
   fi
 }
 
+ask_optional() {
+  local prompt="$1" default="${2:-}" value=""
+  if [[ -n "$default" ]]; then
+    read -r -p "$prompt [$default, - to clear]: " value || true
+    if [[ "$value" == "-" ]]; then
+      printf ''
+    else
+      printf '%s' "${value:-$default}"
+    fi
+  else
+    read -r -p "$prompt (Enter to skip): " value || true
+    printf '%s' "$value"
+  fi
+}
+
 ask_secret_keep() {
   local prompt="$1" current="${2:-}" value=""
   if [[ -n "$current" ]]; then
-    read -r -s -p "$prompt [configured, Enter to keep]: " value || true
+    read -r -s -p "$prompt [configured, Enter to keep, - to clear]: " value || true
     printf '\n' >&2
-    printf '%s' "${value:-$current}"
+    if [[ "$value" == "-" ]]; then
+      printf ''
+    else
+      printf '%s' "${value:-$current}"
+    fi
   else
     read -r -s -p "$prompt: " value || true
     printf '\n' >&2
@@ -216,7 +277,7 @@ write_env() {
   local old_umask tmp
   old_umask="$(umask)"
   umask 077
-  tmp="$(mktemp "$CONFIG_DIR/env.XXXXXX")"
+  tmp="$(new_temp "$CONFIG_DIR/env.XXXXXX")"
   chmod 600 "$tmp"
   if [[ -f "$ENV_FILE" ]]; then
     cp "$ENV_FILE" "$tmp"
@@ -254,7 +315,7 @@ run_youtube_login() {
   [[ -f "$JAR" ]] || build_jar
   ensure_config_dir
   local tmp token
-  tmp="$(mktemp "$CONFIG_DIR/yt.XXXXXX")"
+  tmp="$(new_temp "$CONFIG_DIR/yt.XXXXXX")"
   chmod 600 "$tmp"
   if java "${JAVA_ARGS[@]}" -cp "$JAR" dev.chico.bot.source.YoutubeOauthSetup "$tmp"; then
     token="$(sed -n 's/^YT_REFRESH_TOKEN=//p' "$tmp")"
@@ -274,7 +335,7 @@ run_spotify_login() {
   [[ -f "$JAR" ]] || build_jar
   ensure_config_dir
   local tmp token
-  tmp="$(mktemp "$CONFIG_DIR/spotify.XXXXXX")"
+  tmp="$(new_temp "$CONFIG_DIR/spotify.XXXXXX")"
   chmod 600 "$tmp"
   if SPOTIFY_CLIENT_ID="$SPOTIFY_CLIENT_ID" \
       java "${JAVA_ARGS[@]}" -cp "$JAR" dev.chico.bot.source.SpotifyOauthSetup "$tmp"; then
@@ -314,18 +375,15 @@ setup() {
   echo "chicoBot setup — Enter keeps an existing value; secrets are hidden."
   echo
 
-  if [[ -n "$DISCORD_TOKEN" ]]; then
-    DISCORD_TOKEN="$(ask_secret_keep "Discord bot token [required]" "$DISCORD_TOKEN")"
-  else
-    while [[ -z "$DISCORD_TOKEN" ]]; do
-      DISCORD_TOKEN="$(ask_secret "Discord bot token [required]")"
-      [[ -n "$DISCORD_TOKEN" ]] || echo "The token is required."
-    done
-  fi
+  DISCORD_TOKEN="$(ask_secret_keep "Discord bot token [required]" "$DISCORD_TOKEN")"
+  while [[ -z "$DISCORD_TOKEN" ]]; do
+    DISCORD_TOKEN="$(ask_secret "Discord bot token [required]")"
+    [[ -n "$DISCORD_TOKEN" ]] || echo "The token is required."
+  done
 
   local suggested_cipher=""
   [[ -d "$REPO_ROOT/../yt-cipher" ]] && suggested_cipher="http://localhost:8001"
-  YT_CIPHER_URL="$(ask "[required for YouTube] Cipher URL (Enter to skip)" "${YT_CIPHER_URL:-$suggested_cipher}")"
+  YT_CIPHER_URL="$(ask_optional "[required for YouTube] Cipher URL" "${YT_CIPHER_URL:-$suggested_cipher}")"
   if [[ -n "$YT_CIPHER_URL" ]]; then
     YT_CIPHER_PASSWORD="$(ask_secret_keep "Cipher password [optional for no-auth]" "$YT_CIPHER_PASSWORD")"
   else
@@ -337,8 +395,8 @@ setup() {
     run_youtube_login
   fi
 
-  DEV_GUILD_ID="$(ask "[optional] Dev guild id (Enter to skip)" "$DEV_GUILD_ID")"
-  if [[ -n "$DEV_GUILD_ID" && ! "$DEV_GUILD_ID" =~ ^[0-9]+$ ]]; then
+  DEV_GUILD_ID="$(ask_optional "[optional] Dev guild id" "$DEV_GUILD_ID")"
+  if [[ -n "$DEV_GUILD_ID" && ! "$DEV_GUILD_ID" =~ ^[0-9]{1,19}$ ]]; then
     echo "invalid guild id; clearing it."
     DEV_GUILD_ID=""
   fi
@@ -346,10 +404,19 @@ setup() {
   echo
   echo "[optional] Spotify: user login for owned/collaborative playlists."
   echo "Spotify 2026: public playlist contents are unavailable and Premium cannot be verified."
-  SPOTIFY_CLIENT_ID="$(ask "Spotify client id (Enter to skip)" "$SPOTIFY_CLIENT_ID")"
+  local old_spotify_id="$SPOTIFY_CLIENT_ID"
+  SPOTIFY_CLIENT_ID="$(ask_optional "Spotify client id" "$SPOTIFY_CLIENT_ID")"
+  if [[ "$SPOTIFY_CLIENT_ID" != "$old_spotify_id" ]]; then
+    SPOTIFY_REFRESH_TOKEN=""
+  fi
   if [[ -n "$SPOTIFY_CLIENT_ID" ]]; then
     SPOTIFY_CLIENT_SECRET="$(ask_secret_keep "Spotify client secret" "$SPOTIFY_CLIENT_SECRET")"
-    if ask_yes_no "Run Spotify login now (PKCE)?"; then
+    if [[ -z "$SPOTIFY_CLIENT_SECRET" ]]; then
+      echo "Spotify needs both client id and secret; clearing Spotify."
+      SPOTIFY_CLIENT_ID=""
+      SPOTIFY_CLIENT_SECRET=""
+      SPOTIFY_REFRESH_TOKEN=""
+    elif ask_yes_no "Run Spotify login now (PKCE)?"; then
       run_spotify_login
     fi
   else
@@ -362,6 +429,7 @@ setup() {
   APPLE_DEVELOPER_TOKEN="$(ask_secret_keep "Apple Music developer token" "$APPLE_DEVELOPER_TOKEN")"
   if [[ -n "$APPLE_DEVELOPER_TOKEN" ]]; then
     APPLE_STOREFRONT="$(ask "Apple Music storefront" "${APPLE_STOREFRONT:-us}")"
+    APPLE_STOREFRONT="$(printf '%s' "$APPLE_STOREFRONT" | tr '[:upper:]' '[:lower:]')"
     if [[ ! "$APPLE_STOREFRONT" =~ ^[a-z]{2}$ ]]; then
       echo "invalid storefront; using us."
       APPLE_STOREFRONT="us"
@@ -394,8 +462,13 @@ start() {
     [[ -t 0 ]] || die "setup required: run 'chicoBot setup' in a terminal"
     setup
   fi
+  if [[ "${CHICOS_BOT_DRY_RUN:-0}" == "1" ]]; then
+    # Test seam: prove the env path without launching the bot.
+    echo "would exec: CHICOS_BOT_ENV=$ENV_FILE $REPO_ROOT/run.sh"
+    return 0
+  fi
   [[ -f "$JAR" ]] || build_jar
-  exec "$REPO_ROOT/run.sh"
+  CHICOS_BOT_ENV="$ENV_FILE" exec "$REPO_ROOT/run.sh"
 }
 
 main() {

@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Spotify Authorization Code + PKCE helper. Writes the refresh token to a
  * mode-600 file when a path argument is given; otherwise prints it for manual
- * use. The future setup wizard calls the file form.
+ * use. The chicoBot setup wizard calls the file form.
  */
 public final class SpotifyOauthSetup {
 

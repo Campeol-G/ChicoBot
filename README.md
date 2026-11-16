@@ -70,6 +70,9 @@ chicoBot check      # check Java/Maven/Tesseract/env/jar/cipher
 chicoBot help       # usage
 ```
 
+The defaults are `~/.config/chicos-bot/env` and `~/.local/bin/chicoBot`;
+`XDG_CONFIG_HOME` and `XDG_BIN_HOME` are honored.
+
 `bin/chicoBot` also works without the symlink. The wizard covers the cipher,
 optional YouTube login, dev guild, Spotify app/login and Apple Music tokens;
 the sections below explain the optional services. An empty
@@ -188,7 +191,7 @@ it is not a Premium check.
    # append /tmp/spotify-token to ~/.config/chicos-bot/env, then delete it
    ```
 
-   The future `chicoBot spotify-login` wraps this command. Scopes requested:
+   The `chicoBot setup` wizard runs this command for you. Scopes requested:
    `playlist-read-private`, `playlist-read-collaborative`, `user-read-private`.
 4. Restart. The bot checks `/v1/me` once at startup and logs whether user mode
    is enabled. The fallback chain is: user login (playlists) → client
@@ -289,6 +292,7 @@ numbers: `docs/ocr-evaluation.md`.
 
 ```bash
 mvn -q test
+bash tests/chicoBot-test.sh
 ```
 
 Unit tests need no network, Tesseract or Discord. Integration tests carry
