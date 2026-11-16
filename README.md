@@ -3,10 +3,11 @@
 Personal Discord music bot (Java): plays YouTube and SoundCloud tracks and
 imports tracks from playlist screenshots through local OCR, with a preview.
 
-Status: v1.1 feature-complete. The bot connects, plays by link or search,
-keeps a per-guild queue with a live queue message, confirms playlists before
-enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
-(`@bot` + image → preview → Play all).
+Status: v1.2 feature-complete. `chicoBot` handles first-run setup, the bot
+plays by link or search, keeps a per-guild queue with a live cozy message,
+confirms playlists before enqueueing, imports YouTube Music / Spotify
+screenshots via Tesseract (`@bot` + image → preview → Play all), and reads
+official Spotify/Apple Music metadata with safe fallbacks.
 
 ## Features
 
@@ -16,7 +17,10 @@ enqueueing, and imports YouTube Music / Spotify screenshots via Tesseract
 - `@bot p <query>` in a channel works like `/play`; bare `/play` unpauses.
 - `/help` posts an ephemeral guide to the commands and the import flow.
 - `/unloop` stops any loop; `/loop disable` still works.
-- `/queue` posts one live queue message that updates on every change.
+- `/queue` posts one live queue message that updates on every change, with the
+  current track marked and loop state visible.
+- Warm, consistent embeds: amber now-playing/import, sage queue/help, rose
+  errors; short command replies are embeds too.
 - Mention the bot with a playlist screenshot (PNG, JPEG or WebP, up to 10 images):
   it reads the tracks with local OCR, shows a preview with **Play all**,
   **Remove items** and **Cancel** buttons, then queues the confirmed list
