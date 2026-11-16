@@ -331,16 +331,25 @@ public final class MetadataLookup {
     return Optional.of(artist.strip() + " - " + title.strip());
   }
 
-  private static String appleTrackId(URI uri) {
-    String id = queryParam(uri.getQuery(), "i");
+  static String appleTrackId(URI uri) {
+    String id = queryParam(uri.getRawQuery(), "i");
     if (id != null && !id.isEmpty()) {
+      if (!id.matches("[0-9]+")) {
+        return null;
+      }
       return id;
     }
     List<String> segments =
         List.of(uri.getPath().split("/")).stream().filter(s -> !s.isEmpty()).toList();
     int song = segments.indexOf("song");
     if (song >= 0 && segments.size() > song + 1) {
-      return segments.get(segments.size() - 1);
+      String last = segments.get(segments.size() - 1);
+      // POR QUE: the path carries the store id; anything but digits is a
+      // forged link, so skip the lookup instead of querying iTunes.
+      if (!last.matches("[0-9]+")) {
+        return null;
+      }
+      return last;
     }
     return null;
   }

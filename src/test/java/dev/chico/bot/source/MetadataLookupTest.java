@@ -46,6 +46,8 @@ class MetadataLookupTest {
   private MetadataLookup appleLookup;
   private String baseUrl;
   private final AtomicReference<String> lastOembedQuery = new AtomicReference<>();
+  private final java.util.concurrent.atomic.AtomicInteger lookupHits =
+      new java.util.concurrent.atomic.AtomicInteger();
 
   @BeforeEach
   void startServer() throws IOException {
@@ -53,6 +55,7 @@ class MetadataLookupTest {
     server.createContext(
         "/lookup",
         exchange -> {
+          lookupHits.incrementAndGet();
           String query = exchange.getRequestURI().getQuery();
           byte[] body =
               query != null && query.contains("id=1559523359")
@@ -158,6 +161,8 @@ class MetadataLookupTest {
     });
     server.start();
     baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+    lookupHits.set(0);
+    lastOembedQuery.set(null);
     lookup =
         new MetadataLookup(
             URI.create(baseUrl + "/lookup"), Duration.ofSeconds(5));
@@ -394,5 +399,48 @@ class MetadataLookupTest {
 
     assertEquals(2, content.tracks().size());
     assertEquals("Song One", content.tracks().get(0).title());
+  }
+
+  @Test
+  void nonNumericAppleIdMakesNoLookup() throws Exception {
+    assertNull(
+        MetadataLookup.appleTrackId(
+            URI.create("https://music.apple.com/br/album/whatever/1559523357?i=abc")));
+
+    UrlQuery query =
+        new UrlQuery(
+            Source.APPLE_MUSIC,
+            URI.create("https://music.apple.com/br/album/whatever/1559523357?i=abc"));
+    assertTrue(lookup.artistTitle(query).get().isEmpty());
+    assertEquals(0, lookupHits.get());
+  }
+
+  @Test
+  void encodedAmpersandAppleIdMakesNoLookup() throws Exception {
+    assertNull(
+        MetadataLookup.appleTrackId(
+            URI.create(
+                "https://music.apple.com/br/album/whatever/1559523357?i=1559523359%26x")));
+
+    lookupHits.set(0);
+    UrlQuery query =
+        new UrlQuery(
+            Source.APPLE_MUSIC,
+            URI.create(
+                "https://music.apple.com/br/album/whatever/1559523357?i=1559523359%26x"));
+    assertTrue(lookup.artistTitle(query).get().isEmpty());
+    assertEquals(0, lookupHits.get());
+  }
+
+  @Test
+  void numericAppleIdStillResolves() {
+    assertEquals(
+        "1559523359",
+        MetadataLookup.appleTrackId(
+            URI.create("https://music.apple.com/br/album/whatever/1559523357?i=1559523359")));
+    assertEquals(
+        "1559523359",
+        MetadataLookup.appleTrackId(
+            URI.create("https://music.apple.com/us/song/never-gonna-give-you-up/1559523359")));
   }
 }
