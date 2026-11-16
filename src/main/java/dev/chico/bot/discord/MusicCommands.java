@@ -259,7 +259,21 @@ public final class MusicCommands extends ListenerAdapter {
       event.reply("Join my voice channel to control playback.").setEphemeral(true).queue(null, err -> log.warn("reply failed", err));
       return;
     }
-    event.replyEmbeds(Embeds.info(message)).queue(null, err -> log.warn("reply failed", err));
+    var embed = isRefusal(message) ? Embeds.error(message) : Embeds.status(message);
+    event.replyEmbeds(embed).queue(null, err -> log.warn("reply failed", err));
+  }
+
+  /** Service replies are strings; keep the refusal set in one place. */
+  static boolean isRefusal(String message) {
+    return message.startsWith("Nothing")
+        || message.startsWith("No ")
+        || message.startsWith("Cannot")
+        || message.startsWith("Could not")
+        || message.startsWith("That playlist")
+        || message.startsWith("The queue is full")
+        || message.startsWith("Search failed")
+        || message.startsWith("Use `")
+        || message.startsWith("Slow down");
   }
 
   private boolean inSameChannel(SlashCommandInteractionEvent event) {

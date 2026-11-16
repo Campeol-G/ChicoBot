@@ -104,7 +104,8 @@ public final class ImageContextMenu extends ListenerAdapter {
                   .getHook()
                   .editOriginal(
                       new MessageEditBuilder()
-                          .setContent(text)
+                          .setContent("")
+                          .setEmbeds(Embeds.error(text))
                           .setAllowedMentions(Collections.emptyList())
                           .build())
                   .queue();

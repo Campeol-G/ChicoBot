@@ -190,7 +190,8 @@ public final class MessageListener extends ListenerAdapter {
                           progress
                               .editMessage(
                                   new MessageEditBuilder()
-                                      .setContent(text)
+                                      .setContent("")
+                                      .setEmbeds(Embeds.error(text))
                                       .setAllowedMentions(Collections.emptyList())
                                       .build())
                               .queue();

@@ -38,6 +38,41 @@ class EmbedsTest {
   }
 
   @Test
+  void statusPreservesMultilineReport() {
+    String message = "Skipped to 2 - Beta.\nSkipped:\n1. Thriller";
+    var embed = Embeds.status(message);
+
+    assertEquals(message, embed.getDescription());
+    assertEquals(Embeds.COZY_AMBER, embed.getColor());
+  }
+
+  @Test
+  void queueMarksCurrentAndLoopTogether() {
+    var embed =
+        Embeds.queue(
+            List.of(candidate("First", "a", 200), candidate("Second", "b", 200)),
+            new dev.chico.bot.audio.TrackScheduler.LoopView(
+                dev.chico.bot.audio.TrackScheduler.LoopMode.SINGLE, 2),
+            true);
+
+    assertTrue(embed.getDescription().contains("▶ **1. First"), embed.getDescription());
+    assertTrue(embed.getDescription().contains("🔂 2."), embed.getDescription());
+  }
+
+  @Test
+  void emptyPlaylistPreviewUsesRoseUnlessSingleTrack() {
+    var error =
+        Embeds.playlistPreview(
+            List.of(), 0, false, "That playlist is private or unavailable.");
+    assertEquals(Embeds.COZY_ROSE, error.getColor());
+
+    var single =
+        Embeds.playlistPreview(
+            List.of(), 0, true, "The playlist could not be loaded.");
+    assertEquals(Embeds.COZY_SAGE, single.getColor());
+  }
+
+  @Test
   void queueMarksCurrentTrackOnlyWhenAsked() {
     var marked =
         Embeds.queue(

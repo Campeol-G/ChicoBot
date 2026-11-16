@@ -146,7 +146,7 @@ public final class QueueLive {
       return;
     }
     channel
-        .sendMessageEmbeds(Embeds.error(message))
+        .sendMessageEmbeds(Embeds.errorTrusted(message))
         .setAllowedMentions(Collections.emptyList())
         .queue(null, failure -> log.warn("audio failure report failed", failure));
   }

@@ -173,7 +173,11 @@ public final class Embeds {
     if (items.isEmpty()) {
       String message =
           note != null && !note.isBlank() ? note : "That playlist is empty.";
+      if (!canPlaySingle) {
+        return error(message);
+      }
       builder.setDescription(TextSanitizer.escape(message));
+      builder.setFooter("🌿 The linked track is still available.");
       return builder.build();
     }
     int pageSize = 10;
@@ -221,6 +225,23 @@ public final class Embeds {
         .setDescription(TextSanitizer.escape(message))
         .setColor(COZY_AMBER)
         .setFooter("🌿 chicos-bot")
+        .build();
+  }
+
+  /** Trusted reply already escaped at the service boundary; keeps newlines. */
+  static MessageEmbed status(String message) {
+    return new EmbedBuilder()
+        .setDescription(truncate(message))
+        .setColor(COZY_AMBER)
+        .setFooter("🌿 chicos-bot")
+        .build();
+  }
+
+  /** Trusted error already escaped at the service boundary; keeps length. */
+  static MessageEmbed errorTrusted(String message) {
+    return new EmbedBuilder()
+        .setDescription(truncate(message))
+        .setColor(COZY_ROSE)
         .build();
   }
 
