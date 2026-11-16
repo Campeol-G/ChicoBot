@@ -134,16 +134,19 @@ public final class DefaultTrackResolver implements TrackResolver {
   @Override
   public CompletableFuture<List<TrackCandidate>> resolvePlaylist(UrlQuery query) {
     TrackLoader loader = loaders.get(query.source());
-    if (loader == null) {
+    if (loader == null || breaker.isOpen(query.source())) {
       return CompletableFuture.completedFuture(List.of());
     }
-    // POR QUE: one loader call fetches the whole list; the per-track budget
-    // is too short for large playlists.
+    // POR QUE: the failure must reach the caller unchanged so a private or
+    // unavailable playlist keeps its message instead of becoming generic.
     return withTimeout(loader.loadPlaylist(query.uri()), resolveTimeout.multipliedBy(4))
-        .thenApply(
-            candidates -> {
-              breaker.recordSuccess(query.source());
-              return candidates;
+        .whenComplete(
+            (candidates, failure) -> {
+              if (failure == null) {
+                breaker.recordSuccess(query.source());
+              } else {
+                breaker.recordFailure(query.source());
+              }
             });
   }
 

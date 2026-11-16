@@ -42,6 +42,8 @@ class DefaultTrackResolverTest {
     volatile List<TrackCandidate> urlResult = List.of();
     volatile Throwable urlFailure;
     volatile List<TrackCandidate> playlistResult = List.of();
+    final AtomicInteger playlistLoads = new AtomicInteger();
+    volatile Throwable playlistFailure;
     final java.util.Queue<Throwable> urlFailureQueue = new java.util.ArrayDeque<>();
 
     FakeLoader(Source source) {
@@ -91,6 +93,12 @@ class DefaultTrackResolverTest {
 
     @Override
     public CompletableFuture<List<TrackCandidate>> loadPlaylist(URI uri) {
+      playlistLoads.incrementAndGet();
+      if (playlistFailure != null) {
+        CompletableFuture<List<TrackCandidate>> failed = new CompletableFuture<>();
+        failed.completeExceptionally(playlistFailure);
+        return failed;
+      }
       return CompletableFuture.completedFuture(playlistResult);
     }
   }
@@ -686,6 +694,55 @@ class DefaultTrackResolverTest {
             .get();
 
     assertEquals(3, result.size());
+  }
+
+  @Test
+  void resolvePlaylistOpenBreakerSkipsLoad() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.playlistResult = List.of(candidate(Source.YOUTUBE, "One", "Artist"));
+    CircuitBreaker breaker = new CircuitBreaker(1, Duration.ofMinutes(5), Clock.systemUTC());
+    breaker.recordFailure(Source.YOUTUBE);
+    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
+    loaders.put(Source.YOUTUBE, youtube);
+    loaders.put(Source.SOUNDCLOUD, soundcloud);
+    DefaultTrackResolver openResolver =
+        new DefaultTrackResolver(
+            loaders, new Ranker(0.0), breaker, Duration.ofSeconds(5), false);
+
+    List<TrackCandidate> result =
+        openResolver
+            .resolvePlaylist(
+                new UrlQuery(Source.YOUTUBE, URI.create("https://youtube.com/playlist?list=PLx")))
+            .get();
+
+    assertTrue(result.isEmpty());
+    assertEquals(0, youtube.playlistLoads.get());
+  }
+
+  @Test
+  void resolvePlaylistFailurePropagatesAndTripsBreaker() throws Exception {
+    FakeLoader youtube = new FakeLoader(Source.YOUTUBE);
+    FakeLoader soundcloud = new FakeLoader(Source.SOUNDCLOUD);
+    youtube.playlistFailure = new RuntimeException("boom");
+    CircuitBreaker breaker = new CircuitBreaker(1, Duration.ofMinutes(5), Clock.systemUTC());
+    Map<Source, TrackLoader> loaders = new EnumMap<>(Source.class);
+    loaders.put(Source.YOUTUBE, youtube);
+    loaders.put(Source.SOUNDCLOUD, soundcloud);
+    DefaultTrackResolver failingResolver =
+        new DefaultTrackResolver(
+            loaders, new Ranker(0.0), breaker, Duration.ofSeconds(5), false);
+
+    try {
+      failingResolver
+          .resolvePlaylist(
+              new UrlQuery(Source.YOUTUBE, URI.create("https://youtube.com/playlist?list=PLx")))
+          .get();
+      assertTrue(false, "expected playlist load to fail");
+    } catch (java.util.concurrent.ExecutionException expected) {
+      assertEquals("boom", expected.getCause().getMessage());
+    }
+    assertTrue(breaker.isOpen(Source.YOUTUBE));
   }
 
   @Test
